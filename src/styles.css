@@ -233,6 +233,98 @@ body[data-estado="expandida"] .panel {
   font-size: 11px;
 }
 
+/* ── Música ───────────────────────────────────────────────── */
+.musica {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--campo);
+}
+
+.musica[hidden] {
+  display: none;
+}
+
+.musica .nota {
+  flex: none;
+  color: var(--acento);
+  font-size: 14px;
+}
+
+.musica-texto {
+  flex: 1;
+  min-width: 0;
+}
+
+.musica-controles {
+  display: flex;
+  gap: 2px;
+}
+
+.musica-controles button {
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--texto);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.musica-controles button:hover {
+  background: var(--borde);
+}
+
+/* Con música, las listas se achican para que todo quepa */
+body.con-musica .lista {
+  max-height: 104px;
+}
+
+body.con-musica #vista-pedido {
+  max-height: 124px;
+}
+
+/* ── Bandeja y arrastrar/soltar ───────────────────────────── */
+.archivo .nombre {
+  cursor: pointer;
+}
+
+.archivo .quitar {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--tenue);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.archivo .quitar:hover {
+  color: var(--texto);
+}
+
+#zona-soltar {
+  display: none;
+  position: absolute;
+  inset: 6px;
+  z-index: 5;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--acento);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.85);
+  color: var(--acento);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+body.arrastrando[data-estado="expandida"] #zona-soltar {
+  display: flex;
+}
+
 /* ── Pestañas ─────────────────────────────────────────────── */
 .pestanas {
   display: flex;

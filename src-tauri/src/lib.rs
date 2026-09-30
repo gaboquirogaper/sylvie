@@ -8,14 +8,18 @@
 //! - notion         → API de Notion
 //! - avisos         → revisión periódica de Notion y avisos al notch
 //! - claude         → chat con Claude Code (modo no interactivo, solo Notion) e historial
+//! - musica         → lo que suena en Spotify / Apple Music y sus controles
+//! - archivos       → bandeja de archivos del notch y AirDrop
 //!
-//! Más adelante: fuentes futuras (calendario, hooks, música, archivos…),
+//! Más adelante: fuentes futuras (calendario, hooks, otras apps…),
 //! cada una en su propio módulo.
 
+mod archivos;
 mod avisos;
 mod bandeja;
 mod claude;
 mod configuracion;
+mod musica;
 mod notch;
 mod notion;
 mod secretos;
@@ -52,6 +56,10 @@ pub fn run() {
             claude::enviar_pedido,
             claude::cancelar_pedido,
             claude::historial,
+            musica::musica_actual,
+            musica::controlar_musica,
+            archivos::enviar_por_airdrop,
+            archivos::mostrar_en_finder,
         ])
         .setup(|app| {
             // En Mac: sin ícono en el Dock; Sylvie vive en la barra de menú.
@@ -61,6 +69,7 @@ pub fn run() {
             bandeja::crear(app.handle())?;
             notch::iniciar(app.handle())?;
             avisos::iniciar(app.handle().clone());
+            musica::iniciar(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

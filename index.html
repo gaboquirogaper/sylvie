@@ -9,6 +9,7 @@
   </head>
   <body data-estado="escondida">
     <div id="notch">
+      <div id="zona-soltar">Suelta aquí para agregar a la bandeja</div>
       <header class="cabecera">
         <div class="lado izquierdo">
           <canvas id="mascota" aria-label="Sylvie"></canvas>
@@ -20,10 +21,24 @@
       </header>
 
       <section class="panel">
+        <div id="musica" class="musica" hidden>
+          <span class="nota">♪</span>
+          <div class="musica-texto">
+            <div id="musica-titulo" class="aviso-titulo"></div>
+            <div id="musica-artista" class="aviso-detalle"></div>
+          </div>
+          <div class="musica-controles">
+            <button data-accion="anterior" type="button" title="Anterior">⏮</button>
+            <button id="musica-alternar" data-accion="alternar" type="button" title="Reproducir / pausar">⏸</button>
+            <button data-accion="siguiente" type="button" title="Siguiente">⏭</button>
+          </div>
+        </div>
+
         <div class="fila-titulo">
           <nav class="pestanas">
             <button class="pestana activa" data-vista="avisos" type="button">Avisos</button>
             <button class="pestana" data-vista="historial" type="button">Historial</button>
+            <button class="pestana" data-vista="bandeja" type="button">Bandeja</button>
           </nav>
           <button id="abrir-configuracion" type="button">Configuración</button>
         </div>
@@ -36,6 +51,16 @@
         <div id="vista-historial" class="vista" hidden>
           <ul id="lista-historial" class="lista"></ul>
           <p id="sin-historial" class="vacio">Todavía no le pediste nada a Sylvie.</p>
+        </div>
+
+        <div id="vista-bandeja" class="vista" hidden>
+          <ul id="lista-bandeja" class="lista"></ul>
+          <p id="sin-bandeja" class="vacio">Arrastra archivos al notch para dejarlos aquí y enviarlos por AirDrop.</p>
+          <div id="acciones-bandeja" class="acciones" hidden>
+            <button id="vaciar-bandeja" type="button">Vaciar</button>
+            <button id="enviar-airdrop" type="button">Enviar por AirDrop</button>
+          </div>
+          <p id="mensaje-bandeja" class="aviso-detalle"></p>
         </div>
 
         <div id="vista-pedido" class="vista" hidden>

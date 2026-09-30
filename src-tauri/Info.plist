@@ -5,5 +5,8 @@
   <!-- Sylvie vive en la barra de menú: sin ícono en el Dock desde el arranque -->
   <key>LSUIElement</key>
   <true/>
+  <!-- Texto del permiso que macOS muestra al leer/controlar Spotify o Música -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Sylvie muestra la canción que suena y te deja pausarla o pasarla desde el notch.</string>
 </dict>
 </plist>

@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Mascota, type EstadoMascota } from "./mascota";
 
 // ── Tipos ─────────────────────────────────────────────────────
 // Píldora: escondida → (mouse o aviso) → asomada → (clic) → expandida
 type Estado = "escondida" | "asomada" | "expandida";
-type Vista = "avisos" | "historial" | "pedido";
+type Vista = "avisos" | "historial" | "bandeja" | "pedido";
 type EstadoPedido = "ninguno" | "trabajando" | "listo" | "error";
 
 type Aviso = {
@@ -20,6 +21,7 @@ type Aviso = {
 type Entrada = { fecha: string; pedido: string; resultado: string; ok: boolean };
 type Progreso = { tipo: "paso" | "texto"; texto: string };
 type Fin = { ok: boolean; resultado: string; segundos: number };
+type Cancion = { app: string; reproduciendo: boolean; titulo: string; artista: string } | null;
 
 // ── Constantes (deben coincidir con tauri.conf.json y styles.css) ──
 const ANCHO_VENTANA = 520;
@@ -44,6 +46,7 @@ const pestanas = $<HTMLElement>(".pestanas");
 const vistas: Record<Vista, HTMLDivElement> = {
   avisos: $<HTMLDivElement>("#vista-avisos"),
   historial: $<HTMLDivElement>("#vista-historial"),
+  bandeja: $<HTMLDivElement>("#vista-bandeja"),
   pedido: $<HTMLDivElement>("#vista-pedido"),
 };
 const listaAvisos = $<HTMLUListElement>("#lista-avisos");
@@ -57,6 +60,17 @@ const botonCancelar = $<HTMLButtonElement>("#cancelar-pedido");
 const botonListo = $<HTMLButtonElement>("#listo-pedido");
 const formPedido = $<HTMLFormElement>("#form-pedido");
 const campoPedido = $<HTMLInputElement>("#pedido");
+// Música
+const barraMusica = $<HTMLDivElement>("#musica");
+const musicaTitulo = $<HTMLDivElement>("#musica-titulo");
+const musicaArtista = $<HTMLDivElement>("#musica-artista");
+const botonAlternar = $<HTMLButtonElement>("#musica-alternar");
+// Bandeja
+const listaBandeja = $<HTMLUListElement>("#lista-bandeja");
+const sinBandeja = $<HTMLParagraphElement>("#sin-bandeja");
+const accionesBandeja = $<HTMLDivElement>("#acciones-bandeja");
+const mensajeBandeja = $<HTMLParagraphElement>("#mensaje-bandeja");
+const pestanaBandeja = $<HTMLButtonElement>('.pestana[data-vista="bandeja"]');
 
 // ── Estado ────────────────────────────────────────────────────
 let estado: Estado = "escondida";
@@ -74,6 +88,10 @@ let anunciando = false; // mientras se anuncia algo, no esconderse por falta de 
 let aturdida = false; // secreto: 3 toques a la mascota
 let felizVigente = false; // la cara "feliz" dura unos segundos tras un pedido exitoso
 let hayToken = false;
+let cancion: Cancion = null;
+let musicaNueva = false; // mostrar "♪ sonando" unos segundos al cambiar de canción
+let bandeja: string[] = []; // rutas de archivos soltados en el notch
+let expandidaPorArrastre = false;
 let avisos: Aviso[] = [];
 let sinLeer = 0;
 
@@ -97,7 +115,7 @@ function elemento<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase: str
 
 // ── Estados de la píldora ─────────────────────────────────────
 
-function aplicarEstado(nuevo: Estado) {
+function aplicarEstado(nuevo: Estado, enfocar = true) {
   estado = nuevo;
   document.body.dataset.estado = nuevo;
   mascota.pausar(nuevo === "escondida");
@@ -110,15 +128,17 @@ function aplicarEstado(nuevo: Estado) {
   if (nuevo === "expandida") {
     if (vista === "avisos") sinLeer = 0;
     actualizarCabecera();
-    invoke("enfocar");
-    setTimeout(() => campoPedido.focus(), 150);
+    if (enfocar) {
+      invoke("enfocar");
+      setTimeout(() => campoPedido.focus(), 150);
+    }
   } else {
     campoPedido.blur();
   }
 }
 
-function cambiarEstado(nuevo: Estado) {
-  if (nuevo !== estado) aplicarEstado(nuevo);
+function cambiarEstado(nuevo: Estado, enfocar = true) {
+  if (nuevo !== estado) aplicarEstado(nuevo, enfocar);
 }
 
 function cerrarPanel() {
@@ -143,6 +163,7 @@ function anunciar() {
 
 function actualizarCabecera() {
   let texto = hayToken ? "hola" : "sin Notion";
+  if (cancion?.reproduciendo) texto = musicaNueva ? "♪ sonando" : "♪";
   let cara: EstadoMascota = "reposo";
   if (estadoPedido === "trabajando") {
     texto = "pensando";
@@ -177,6 +198,7 @@ function mostrarVista(nueva: Vista) {
     actualizarCabecera();
   }
   if (nueva === "historial") cargarHistorial();
+  if (nueva === "bandeja") dibujarBandeja();
 }
 
 pestanas.querySelectorAll<HTMLButtonElement>(".pestana").forEach((boton) => {
@@ -296,6 +318,122 @@ botonListo.addEventListener("click", () => {
   campoPedido.focus();
 });
 
+// ── Música (Spotify / Apple Music) ────────────────────────────
+
+function dibujarMusica() {
+  barraMusica.hidden = !cancion;
+  document.body.classList.toggle("con-musica", !!cancion);
+  if (cancion) {
+    musicaTitulo.textContent = cancion.titulo;
+    musicaArtista.textContent = [cancion.artista, cancion.app].filter(Boolean).join(" · ");
+    botonAlternar.textContent = cancion.reproduciendo ? "⏸" : "▶";
+  }
+  actualizarCabecera();
+}
+
+function recibirCancion(nueva: Cancion) {
+  const anterior = cancion;
+  cancion = nueva;
+  dibujarMusica();
+  // Canción nueva (no la primera que detecta): asomarse unos segundos.
+  if (nueva?.reproduciendo && anterior && anterior.titulo !== nueva.titulo) {
+    musicaNueva = true;
+    actualizarCabecera();
+    anunciar();
+    window.setTimeout(() => {
+      musicaNueva = false;
+      actualizarCabecera();
+    }, DURACION_ANUNCIO_MS);
+  }
+}
+
+barraMusica.querySelectorAll<HTMLButtonElement>("button[data-accion]").forEach((boton) => {
+  boton.addEventListener("click", async () => {
+    if (!cancion) return;
+    try {
+      await invoke("controlar_musica", { appMusica: cancion.app, accion: boton.dataset.accion });
+      recibirCancion(await invoke<Cancion>("musica_actual"));
+    } catch (error) {
+      musicaArtista.textContent = String(error);
+    }
+  });
+});
+
+// ── Bandeja de archivos y AirDrop ─────────────────────────────
+
+function nombreArchivo(ruta: string): string {
+  return ruta.split(/[\\/]/).pop() || ruta;
+}
+
+function dibujarBandeja() {
+  const filas = bandeja.map((ruta) => {
+    const li = elemento("li", "aviso archivo");
+    const texto = elemento("div", "aviso-texto");
+    const nombre = elemento("div", "aviso-titulo nombre", nombreArchivo(ruta));
+    nombre.title = "Mostrar en Finder";
+    nombre.addEventListener("click", () => {
+      invoke("mostrar_en_finder", { ruta }).catch((e) => (mensajeBandeja.textContent = String(e)));
+    });
+    texto.append(nombre);
+    const quitar = elemento("button", "quitar", "×");
+    quitar.title = "Quitar de la bandeja (no borra el archivo)";
+    quitar.addEventListener("click", () => {
+      bandeja = bandeja.filter((r) => r !== ruta);
+      dibujarBandeja();
+    });
+    li.append(elemento("span", "punto"), texto, quitar);
+    return li;
+  });
+  listaBandeja.replaceChildren(...filas);
+  sinBandeja.hidden = bandeja.length > 0;
+  accionesBandeja.hidden = bandeja.length === 0;
+  pestanaBandeja.textContent = bandeja.length ? `Bandeja (${bandeja.length})` : "Bandeja";
+}
+
+function agregarABandeja(rutas: string[]) {
+  bandeja = [...bandeja, ...rutas.filter((r) => !bandeja.includes(r))];
+  mensajeBandeja.textContent = "";
+  dibujarBandeja();
+}
+
+$<HTMLButtonElement>("#vaciar-bandeja").addEventListener("click", () => {
+  bandeja = [];
+  mensajeBandeja.textContent = "";
+  dibujarBandeja();
+});
+
+$<HTMLButtonElement>("#enviar-airdrop").addEventListener("click", async () => {
+  try {
+    await invoke("enviar_por_airdrop", { rutas: bandeja });
+    mensajeBandeja.textContent = "Abriendo AirDrop…";
+  } catch (error) {
+    mensajeBandeja.textContent = String(error);
+  }
+});
+
+// Arrastrar archivos sobre el notch: se abre el panel en la pestaña Bandeja.
+getCurrentWebview().onDragDropEvent(({ payload }) => {
+  if (payload.type === "enter") {
+    document.body.classList.add("arrastrando");
+    if (estado !== "expandida") {
+      expandidaPorArrastre = true;
+      cambiarEstado("expandida", false); // sin robar el foco mientras arrastras
+    }
+  } else if (payload.type === "leave") {
+    document.body.classList.remove("arrastrando");
+    if (expandidaPorArrastre) {
+      expandidaPorArrastre = false;
+      cambiarEstado("escondida");
+    }
+  } else if (payload.type === "drop") {
+    document.body.classList.remove("arrastrando");
+    expandidaPorArrastre = false;
+    agregarABandeja(payload.paths);
+    if (estadoPedido === "ninguno") mostrarVista("bandeja");
+    invoke("enfocar"); // así un clic fuera vuelve a cerrar el panel
+  }
+});
+
 // ── Eventos desde Rust ────────────────────────────────────────
 
 listen<boolean>("cursor-notch", ({ payload: dentro }) => {
@@ -327,6 +465,8 @@ listen<Fin>("claude-fin", ({ payload }) => {
   terminarPedido(payload.ok, payload.resultado);
   if (vista === "historial") cargarHistorial();
 });
+
+listen<Cancion>("musica", ({ payload }) => recibirCancion(payload));
 
 listen("ajustes-cambiados", async () => {
   await actualizarToken();
@@ -406,6 +546,8 @@ async function iniciar() {
   avisos = await invoke<Aviso[]>("avisos_recientes");
   dibujarAvisos();
   window.setInterval(dibujarAvisos, 60_000); // refrescar "hace X min"
+  dibujarBandeja();
+  recibirCancion(await invoke<Cancion>("musica_actual"));
 }
 
 iniciar();
