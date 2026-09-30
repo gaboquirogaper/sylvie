@@ -21,18 +21,42 @@
 
       <section class="panel">
         <div class="fila-titulo">
-          <p class="titulo">Avisos</p>
+          <nav class="pestanas">
+            <button class="pestana activa" data-vista="avisos" type="button">Avisos</button>
+            <button class="pestana" data-vista="historial" type="button">Historial</button>
+          </nav>
           <button id="abrir-configuracion" type="button">Configuración</button>
         </div>
-        <ul id="lista-avisos" class="lista-avisos"></ul>
-        <p id="sin-avisos" class="vacio">Aquí aparecerán tus avisos de Notion.</p>
-        <input
-          id="pedido"
-          type="text"
-          placeholder="Escribe algo para probar el teclado…"
-          autocomplete="off"
-          spellcheck="false"
-        />
+
+        <div id="vista-avisos" class="vista">
+          <ul id="lista-avisos" class="lista"></ul>
+          <p id="sin-avisos" class="vacio">Aquí aparecerán tus avisos de Notion.</p>
+        </div>
+
+        <div id="vista-historial" class="vista" hidden>
+          <ul id="lista-historial" class="lista"></ul>
+          <p id="sin-historial" class="vacio">Todavía no le pediste nada a Sylvie.</p>
+        </div>
+
+        <div id="vista-pedido" class="vista" hidden>
+          <p id="pedido-texto" class="pedido-texto"></p>
+          <ol id="pasos" class="pasos"></ol>
+          <p id="pedido-resultado" class="pedido-resultado" hidden></p>
+          <div class="acciones">
+            <button id="cancelar-pedido" type="button">Cancelar</button>
+            <button id="listo-pedido" type="button" hidden>Listo</button>
+          </div>
+        </div>
+
+        <form id="form-pedido">
+          <input
+            id="pedido"
+            type="text"
+            placeholder="Pídele algo a Sylvie… (Enter para enviar)"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </form>
       </section>
     </div>
   </body>

@@ -53,7 +53,7 @@ body[data-estado="asomada"] #notch {
 
 body[data-estado="expandida"] #notch {
   width: 480px;
-  height: 272px;
+  height: 290px;
   border-radius: 0 0 22px 22px;
 }
 
@@ -98,9 +98,37 @@ body:not([data-estado="escondida"]) .lado {
   image-rendering: pixelated;
 }
 
-/* Hay avisos sin leer (en la fase 6 será el estado "alerta" de la mascota) */
+/* Estados provisionales de la mascota (en la fase 6 serán animaciones de pixel art) */
 #mascota.con-avisos {
   background: #ffb454;
+}
+
+#mascota.trabajando {
+  background: #8fb8ff;
+  animation: latido 0.9s ease-in-out infinite;
+}
+
+#mascota.feliz {
+  background: var(--acento);
+  animation: salto 0.5s ease-out 3;
+}
+
+#mascota.alerta {
+  background: #ff6961;
+  animation: sacudida 0.4s ease-in-out 3;
+}
+
+@keyframes latido {
+  50% { transform: scale(0.75); }
+}
+
+@keyframes salto {
+  40% { transform: translateY(-4px); }
+}
+
+@keyframes sacudida {
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
 }
 
 #estado {
@@ -158,19 +186,19 @@ body[data-estado="expandida"] .panel {
 }
 
 /* ── Lista de avisos ─────────────────────────────────────── */
-.lista-avisos {
-  max-height: 140px;
+.lista {
+  max-height: 150px;
   margin: 6px -8px 10px;
   padding: 0;
   list-style: none;
   overflow-y: auto;
 }
 
-.lista-avisos:empty {
+.lista:empty {
   display: none;
 }
 
-.lista-avisos::-webkit-scrollbar {
+.lista::-webkit-scrollbar {
   width: 0;
 }
 
@@ -216,6 +244,152 @@ body[data-estado="expandida"] .panel {
 .aviso-detalle {
   color: var(--tenue);
   font-size: 11px;
+}
+
+/* ── Pestañas ─────────────────────────────────────────────── */
+.pestanas {
+  display: flex;
+  gap: 4px;
+}
+
+.pestana {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tenue);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pestana.activa {
+  background: var(--campo);
+  color: var(--texto);
+}
+
+.pestanas[hidden] {
+  display: none;
+}
+
+/* ── Historial ───────────────────────────────────────────── */
+.entrada .marca {
+  flex: none;
+  width: 14px;
+  color: var(--acento);
+  font-size: 12px;
+}
+
+.entrada.fallida .marca {
+  color: #ff6961;
+}
+
+.entrada .aviso-detalle {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  white-space: pre-line;
+}
+
+.entrada.abierta .aviso-detalle {
+  display: block;
+  color: var(--texto);
+}
+
+/* ── Pedido en curso ─────────────────────────────────────── */
+.vista[hidden] {
+  display: none;
+}
+
+#vista-pedido {
+  max-height: 170px;
+  margin: 6px 0 8px;
+  overflow-y: auto;
+}
+
+#vista-pedido::-webkit-scrollbar {
+  width: 0;
+}
+
+.pedido-texto {
+  margin: 0 0 6px;
+  color: var(--texto);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pasos {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.pasos li {
+  position: relative;
+  padding: 2px 0 2px 14px;
+  color: var(--tenue);
+  font-size: 11.5px;
+}
+
+.pasos li::before {
+  content: "•";
+  position: absolute;
+  left: 2px;
+}
+
+.pasos li.texto {
+  color: #c7c7cc;
+  font-style: italic;
+}
+
+/* El último paso "late" mientras Claude trabaja */
+.trabajando-ahora .pasos li:last-child {
+  color: var(--texto);
+  animation: parpadeo 1.2s ease-in-out infinite;
+}
+
+@keyframes parpadeo {
+  50% { opacity: 0.45; }
+}
+
+.pedido-resultado {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--campo);
+  color: var(--texto);
+  font-size: 12.5px;
+  white-space: pre-line;
+  border-left: 3px solid var(--acento);
+}
+
+.pedido-resultado.error {
+  border-left-color: #ff6961;
+}
+
+.acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.acciones button {
+  padding: 4px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--texto);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#form-pedido {
+  margin: 0;
+}
+
+#pedido:disabled {
+  opacity: 0.6;
 }
 
 #pedido {

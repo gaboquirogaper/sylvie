@@ -7,12 +7,14 @@
 //! - secretos       → Llavero / Administrador de credenciales
 //! - notion         → API de Notion
 //! - avisos         → revisión periódica de Notion y avisos al notch
+//! - claude         → chat con Claude Code (modo no interactivo, solo Notion) e historial
 //!
-//! Más adelante: claude (fase 5) y fuentes futuras (calendario, hooks,
-//! música, archivos…), cada una en su propio módulo.
+//! Más adelante: fuentes futuras (calendario, hooks, música, archivos…),
+//! cada una en su propio módulo.
 
 mod avisos;
 mod bandeja;
+mod claude;
 mod configuracion;
 mod notch;
 mod notion;
@@ -24,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(notch::Compartido::nuevo())
         .manage(avisos::EstadoAvisos::default())
+        .manage(claude::EstadoClaude::default())
         .invoke_handler(tauri::generate_handler![
             notch::fijar_zona,
             notch::enfocar,
@@ -38,6 +41,9 @@ pub fn run() {
             avisos::avisos_recientes,
             avisos::revisar_ahora,
             avisos::abrir_en_notion,
+            claude::enviar_pedido,
+            claude::cancelar_pedido,
+            claude::historial,
         ])
         .setup(|app| {
             // En Mac: sin ícono en el Dock; Sylvie vive en la barra de menú.
