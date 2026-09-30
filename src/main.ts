@@ -4,550 +4,1092 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Mascota, type EstadoMascota } from "./mascota";
 
-// ── Tipos ─────────────────────────────────────────────────────
-// Píldora: escondida → (mouse o aviso) → asomada → (clic) → expandida
-type Estado = "escondida" | "asomada" | "expandida";
-type Vista = "avisos" | "historial" | "bandeja" | "pedido";
-type EstadoPedido = "ninguno" | "trabajando" | "listo" | "error";
-
-type Aviso = {
-  clave: string;
-  base: string;
-  titulo: string;
-  url: string;
-  tipo: "nuevo" | "modificado";
-  editado: string;
-};
+// ══ Tipos ═══════════════════════════════════════════════════════
+type Modo = "compacta" | "hover" | "abierta" | "toast" | "cancion" | "aturdida" | "comer";
+type Pestana = "bienvenida" | "inicio" | "claude" | "bandeja" | "conexiones";
+type Toast = null | "aviso" | "listo" | "cancion" | "aturdida" | "reunion";
+type Segmento = "notion" | "calendario" | "tareas";
+type Evento = { titulo: string; inicio: string; fin: string; todo_el_dia: boolean; enlace: string | null; lugar: string | null };
+type Tarea = { app: "clickup" | "asana"; titulo: string; vence: string | null; lugar: string; url: string };
+type Tareas = { tareas: Tarea[]; errores: string[] };
+type EstadoApp = { id: string; conectada: boolean };
+type Aviso = { clave: string; base: string; titulo: string; url: string; tipo: "nuevo" | "modificado"; editado: string };
 type Entrada = { fecha: string; pedido: string; resultado: string; ok: boolean };
 type Progreso = { tipo: "paso" | "texto"; texto: string };
 type Fin = { ok: boolean; resultado: string; segundos: number };
-type Cancion = { app: string; reproduciendo: boolean; titulo: string; artista: string } | null;
+type Cancion = { app: string; reproduciendo: boolean; titulo: string; artista: string; posicion: number; duracion: number; clave: string } | null;
 
-// ── Constantes (deben coincidir con tauri.conf.json y styles.css) ──
-const ANCHO_VENTANA = 520;
-const ZONAS: Record<Estado, { ancho: number; alto: number }> = {
-  escondida: { ancho: 200, alto: 34 },
-  asomada: { ancho: 320, alto: 37 },
-  expandida: { ancho: 480, alto: 325 },
+// ══ Medidas (la ventana mide 760 de ancho: tauri.conf.json) ═════
+const ANCHO_VENTANA = 760;
+const TAMANOS: Record<Modo, { w: number; h: number; r: number }> = {
+  compacta: { w: 304, h: 34, r: 14 },
+  hover: { w: 348, h: 40, r: 18 },
+  abierta: { w: 720, h: 284, r: 30 },
+  toast: { w: 580, h: 128, r: 28 },
+  cancion: { w: 600, h: 142, r: 28 },
+  aturdida: { w: 580, h: 128, r: 28 },
+  comer: { w: 520, h: 132, r: 28 },
 };
-const ESPERA_SALIDA_MS = 250; // antes de esconderse al sacar el mouse
-const DURACION_ANUNCIO_MS = 5000; // cuánto se asoma sola para avisar
-const DURACION_FELIZ_MS = 6000; // cuánto dura la cara "feliz"
+const ESPERA_SALIDA_MS = 250;
+const DURACION_TOAST_MS = 5000;
+const DURACION_BIENVENIDA_MS = 4500;
+const DURACION_FELIZ_MS = 6000;
+const DORMIR_TRAS_SEG = 5 * 60; // 5 minutos sin tocar la Mac
 const MAX_AVISOS = 30;
-const VENTANA_TOQUES_MS = 450; // tiempo máximo entre toques a la mascota
+const GRACIA_BANDEJA_MS = 12_000; // con la Bandeja abierta: tiempo para ir al Finder y volver arrastrando
+const AVISO_REUNION_MIN = 5; // avisar la reunión 5 minutos antes
+const COLOR_TAREA: Record<Tarea["app"], string> = { clickup: "#c9a0ff", asana: "#ff9e9e" };
 
-// ── Elementos ─────────────────────────────────────────────────
-const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
-
-const cabecera = $<HTMLElement>(".cabecera");
-const mascota = new Mascota($<HTMLCanvasElement>("#mascota"));
-const textoEstado = $<HTMLSpanElement>("#estado");
-const pestanas = $<HTMLElement>(".pestanas");
-const vistas: Record<Vista, HTMLDivElement> = {
-  avisos: $<HTMLDivElement>("#vista-avisos"),
-  historial: $<HTMLDivElement>("#vista-historial"),
-  bandeja: $<HTMLDivElement>("#vista-bandeja"),
-  pedido: $<HTMLDivElement>("#vista-pedido"),
+const PLATAFORMAS: Record<string, string> = { Spotify: "#1db954", "Apple Music": "#fa3d5a" };
+const NOTA_SVG = '<svg viewBox="0 0 24 24"><path d="M9 17.5a3 3 0 1 1-2-2.83V5l12-2v11.5a3 3 0 1 1-2-2.83V7.2L9 8.6z"></path></svg>';
+const ICONOS = {
+  favorito: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"></path></svg>',
+  anterior: '<svg viewBox="0 0 24 24"><path d="M19 6v12l-9-6z"></path><rect x="5" y="6" width="2.5" height="12" rx="1"></rect></svg>',
+  pausa: '<svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M7 5v14l12-7z"></path></svg>',
+  siguiente: '<svg viewBox="0 0 24 24"><path d="M5 6v12l9-6z"></path><rect x="16.5" y="6" width="2.5" height="12" rx="1"></rect></svg>',
 };
-const listaAvisos = $<HTMLUListElement>("#lista-avisos");
-const sinAvisos = $<HTMLParagraphElement>("#sin-avisos");
-const listaHistorial = $<HTMLUListElement>("#lista-historial");
-const sinHistorial = $<HTMLParagraphElement>("#sin-historial");
-const pedidoTexto = $<HTMLParagraphElement>("#pedido-texto");
-const pasos = $<HTMLOListElement>("#pasos");
-const pedidoResultado = $<HTMLParagraphElement>("#pedido-resultado");
-const botonCancelar = $<HTMLButtonElement>("#cancelar-pedido");
-const botonListo = $<HTMLButtonElement>("#listo-pedido");
-const formPedido = $<HTMLFormElement>("#form-pedido");
-const campoPedido = $<HTMLInputElement>("#pedido");
-// Música
-const barraMusica = $<HTMLDivElement>("#musica");
-const musicaTitulo = $<HTMLDivElement>("#musica-titulo");
-const musicaArtista = $<HTMLDivElement>("#musica-artista");
-const botonAlternar = $<HTMLButtonElement>("#musica-alternar");
-// Bandeja
-const listaBandeja = $<HTMLUListElement>("#lista-bandeja");
-const sinBandeja = $<HTMLParagraphElement>("#sin-bandeja");
-const accionesBandeja = $<HTMLDivElement>("#acciones-bandeja");
-const mensajeBandeja = $<HTMLParagraphElement>("#mensaje-bandeja");
-const pestanaBandeja = $<HTMLButtonElement>('.pestana[data-vista="bandeja"]');
 
-// ── Estado ────────────────────────────────────────────────────
-let estado: Estado = "escondida";
-let vista: Vista = "avisos";
-let vistaAnterior: Exclude<Vista, "pedido"> = "avisos";
-let estadoPedido: EstadoPedido = "ninguno";
+const APPS = [
+  { id: "notion", nombre: "Notion", letra: "N", color: "#e6e6ea", detalle: "Avisos de tus bases y pedidos con Claude" },
+  { id: "claude", nombre: "Claude Code", letra: "C", color: "#f0a07a", detalle: "El cerebro de los pedidos (tu plan)" },
+  { id: "musica", nombre: "Música", letra: "♪", color: "#6fd6a0", detalle: "Spotify y Apple Music en tu Mac" },
+  { id: "calendario", nombre: "Google Calendar", letra: "G", color: "#8fb8ff", detalle: "Próxima reunión y botón para unirte" },
+  { id: "clickup", nombre: "ClickUp", letra: "U", color: "#c9a0ff", detalle: "Tareas y avisos de tus espacios" },
+  { id: "asana", nombre: "Asana", letra: "A", color: "#ff9e9e", detalle: "Tareas asignadas y cambios" },
+  { id: "saas", nombre: "Tu SaaS", letra: "S", color: "#f5b971", detalle: "Citas nuevas y su asistente de IA" },
+  { id: "mas", nombre: "Agregar", letra: "+", color: "#3a3b45", detalle: "Otras apps compatibles con Claude" },
+];
 
-let temporizadorSalida: number | undefined;
-let temporizadorAnuncio: number | undefined;
-let temporizadorFeliz: number | undefined;
-let esperarSalida = false; // tras cerrar a mano, no reasomarse hasta que el mouse salga
+// ══ Elementos ══════════════════════════════════════════════════
+const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+const notch = $<HTMLDivElement>("#notch");
+const capas: Record<Modo, HTMLElement> = {
+  compacta: $("#capa-compacta"),
+  hover: $("#capa-compacta"),
+  abierta: $("#capa-panel"),
+  toast: $("#capa-toast"),
+  cancion: $("#capa-cancion"),
+  aturdida: $("#capa-aturdida"),
+  comer: $("#capa-comer"),
+};
+const vistas: Record<Pestana, HTMLElement> = {
+  bienvenida: $("#v-bienvenida"),
+  inicio: $("#v-inicio"),
+  claude: $("#v-claude"),
+  bandeja: $("#v-bandeja"),
+  conexiones: $("#v-conexiones"),
+};
+
+// Una mascota por lugar donde aparece (todas muestran la misma cara).
+const mascotas = {
+  compacta: new Mascota($<HTMLCanvasElement>("#m-compacta")),
+  panel: new Mascota($<HTMLCanvasElement>("#m-panel")),
+  toast: new Mascota($<HTMLCanvasElement>("#m-toast")),
+  claude: new Mascota($<HTMLCanvasElement>("#m-claude")),
+  grande: new Mascota($<HTMLCanvasElement>("#m-grande")),
+  aturdida: new Mascota($<HTMLCanvasElement>("#m-aturdida")),
+  comer: new Mascota($<HTMLCanvasElement>("#m-comer")),
+  zona: new Mascota($<HTMLCanvasElement>("#m-zona")),
+};
+mascotas.aturdida.cambiar("aturdido");
+
+// ══ Estado ═════════════════════════════════════════════════════
+let modo: Modo = "compacta";
+let abierta = false;
+let pestana: Pestana = "inicio";
+let segmento: Segmento = "notion";
+let toast: Toast = null;
+let hover = false;
 let mouseDentro = false;
-let anunciando = false; // mientras se anuncia algo, no esconderse por falta de mouse
+let esperarSalida = false; // tras cerrar a mano, no reasomarse hasta que el mouse salga
+let arrastrando = false;
+// "encima" = el archivo está sobre el notch; "comiendo" = lo soltaste y Sylvie se lo come.
+let comiendo: null | "encima" | "comiendo" = null;
 
-let aturdida = false; // secreto: 3 toques a la mascota
-let felizVigente = false; // la cara "feliz" dura unos segundos tras un pedido exitoso
-let hayToken = false;
-let cancion: Cancion = null;
-let musicaNueva = false; // mostrar "♪ sonando" unos segundos al cambiar de canción
-let bandeja: string[] = []; // rutas de archivos soltados en el notch
-let expandidaPorArrastre = false;
+let conexiones: Record<string, boolean> = {};
+let eventos: Evento[] = [];
+let errorCalendario = "";
+let diaElegido = new Date();
+let tareas: Tarea[] = [];
+let erroresTareas: string[] = [];
+const reunionesAvisadas = new Set<string>();
+let reunionToast: Evento | null = null;
 let avisos: Aviso[] = [];
 let sinLeer = 0;
+let cancion: Cancion = null;
+let cambiosCancion: number[] = []; // para detectar el "modo DJ"
+let bandeja: string[] = [];
+let posicion = 0; // segundos (avanza sola entre lecturas)
+let favorita: boolean | null = null; // null = la app no permite favoritos
+let moviendoBarra = false;
+let clavePortada = "";
 
-// ── Utilidades ────────────────────────────────────────────────
+let estadoPedido: "ninguno" | "trabajando" | "listo" | "error" = "ninguno";
+let pasos: string[] = [];
+let ultimoResultado = "";
+
+let felizHasta = 0;
+let djHasta = 0;
+let dormida = false;
+
+let tSalida: number | undefined;
+let tToast: number | undefined;
+let tBienvenida: number | undefined;
+let tCuenta: number | undefined;
+
+// ══ Utilidades ═════════════════════════════════════════════════
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, clase = "", texto = "") {
+  const e = document.createElement(tag);
+  if (clase) e.className = clase;
+  if (texto) e.textContent = texto;
+  return e;
+}
 
 function haceCuanto(iso: string): string {
-  const minutos = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (minutos < 1) return "ahora";
-  if (minutos < 60) return `hace ${minutos} min`;
-  const horas = Math.round(minutos / 60);
-  if (horas < 24) return `hace ${horas} h`;
-  return new Date(iso).toLocaleDateString();
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "ahora";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  return h < 24 ? `hace ${h} h` : new Date(iso).toLocaleDateString();
 }
 
-function elemento<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase: string, texto = "") {
-  const el = document.createElement(etiqueta);
-  el.className = clase;
-  el.textContent = texto;
-  return el;
+// ══ Modo del notch ═════════════════════════════════════════════
+function calcularModo(): Modo {
+  if (comiendo && !abierta) return "comer";
+  if (abierta) return "abierta";
+  if (toast === "aturdida") return "aturdida";
+  if (toast === "cancion") return "cancion";
+  if (toast) return "toast";
+  return hover ? "hover" : "compacta";
 }
 
-// ── Estados de la píldora ─────────────────────────────────────
+function actualizar() {
+  const nuevo = calcularModo();
+  const cambio = nuevo !== modo;
+  modo = nuevo;
+  document.body.dataset.modo = modo;
 
-function aplicarEstado(nuevo: Estado, enfocar = true) {
-  estado = nuevo;
-  document.body.dataset.estado = nuevo;
-  mascota.pausar(nuevo === "escondida");
+  const t = TAMANOS[modo];
+  notch.style.width = `${t.w}px`;
+  notch.style.height = `${t.h}px`;
+  notch.style.borderRadius = `0 0 ${t.r}px ${t.r}px`;
 
-  const zona = ZONAS[nuevo];
-  invoke("fijar_zona", {
-    zona: { x: (ANCHO_VENTANA - zona.ancho) / 2, y: 0, ancho: zona.ancho, alto: zona.alto },
+  // Mostrar solo la capa del modo actual.
+  const visible = capas[modo];
+  new Set(Object.values(capas)).forEach((c) => (c.hidden = c !== visible));
+
+  // Vistas del panel
+  (Object.keys(vistas) as Pestana[]).forEach((p) => (vistas[p].hidden = p !== pestana));
+  document.querySelectorAll<HTMLButtonElement>(".pastilla[data-pestana]").forEach((b) => {
+    b.classList.toggle("activa", abierta && b.dataset.pestana === pestana);
   });
 
-  if (nuevo === "expandida") {
-    if (vista === "avisos") sinLeer = 0;
-    actualizarCabecera();
-    if (enfocar) {
-      invoke("enfocar");
-      setTimeout(() => campoPedido.focus(), 150);
+  // Zona que acepta el mouse (el resto de la ventana deja pasar los clics).
+  if (cambio) {
+    invoke("fijar_zona", { zona: { x: (ANCHO_VENTANA - t.w) / 2, y: 0, ancho: t.w, alto: t.h } });
+  }
+
+  // Pausar las mascotas que no se ven (ahorra batería).
+  mascotas.compacta.pausar(modo !== "compacta" && modo !== "hover");
+  mascotas.panel.pausar(modo !== "abierta");
+  mascotas.claude.pausar(!(modo === "abierta" && pestana === "claude"));
+  mascotas.grande.pausar(!(modo === "abierta" && pestana === "bienvenida"));
+  mascotas.toast.pausar(modo !== "toast");
+  mascotas.aturdida.pausar(modo !== "aturdida");
+  mascotas.comer.pausar(modo !== "comer");
+  mascotas.zona.pausar(!(modo === "abierta" && comiendo));
+  document.body.classList.toggle("comiendo", !!comiendo && abierta);
+  $("#zona-comer").hidden = !(comiendo && abierta);
+
+  actualizarCara();
+  actualizarCaritas();
+}
+
+function abrir(p?: Pestana, enfocar = true) {
+  abierta = true;
+  toast = null;
+  if (p) pestana = p;
+  if (pestana === "inicio" && segmento === "notion") sinLeer = 0;
+  actualizar();
+  if (enfocar) invoke("enfocar");
+  if (pestana === "claude" && enfocar) setTimeout(() => $<HTMLTextAreaElement>("#pedido").focus(), 180);
+}
+
+function cerrar(manual = false) {
+  if (!abierta) return;
+  abierta = false;
+  if (pestana === "bienvenida") pestana = "inicio";
+  if (manual) esperarSalida = true;
+  actualizar();
+}
+
+function irA(p: Pestana) {
+  pestana = p;
+  if (p === "inicio" && segmento === "notion") sinLeer = 0;
+  actualizar();
+  if (p === "claude") setTimeout(() => $<HTMLTextAreaElement>("#pedido").focus(), 120);
+}
+
+function mostrarToast(tipo: Exclude<Toast, null>, ms = DURACION_TOAST_MS) {
+  if (abierta && tipo !== "aturdida") return;
+  toast = tipo;
+  actualizar();
+  window.clearTimeout(tToast);
+  if (tipo === "aturdida") return;
+  const vencer = () => {
+    if (toast !== tipo) return;
+    if (mouseDentro) tToast = window.setTimeout(vencer, 1500); // no se va mientras lo usas
+    else {
+      toast = null;
+      actualizar();
     }
-  } else {
-    campoPedido.blur();
-  }
+  };
+  tToast = window.setTimeout(vencer, ms);
 }
 
-function cambiarEstado(nuevo: Estado, enfocar = true) {
-  if (nuevo !== estado) aplicarEstado(nuevo, enfocar);
+function bienvenida() {
+  if (abierta && pestana !== "bienvenida") return; // no interrumpir si estás usando el panel
+  abrir("bienvenida", false);
+  window.clearTimeout(tBienvenida);
+  tBienvenida = window.setTimeout(() => {
+    if (abierta && pestana === "bienvenida" && !mouseDentro) cerrar();
+  }, DURACION_BIENVENIDA_MS);
 }
 
-function cerrarPanel() {
-  esperarSalida = true;
-  cambiarEstado("escondida");
+// ══ Cara de la mascota (por prioridad) ═════════════════════════
+function caraActual(): EstadoMascota {
+  const ahora = Date.now();
+  if (toast === "aturdida") return "aturdido";
+  if (comiendo === "comiendo") return "comer";
+  if (comiendo === "encima" || arrastrando) return "boca";
+  if (estadoPedido === "trabajando") return "pensando";
+  if (djHasta > ahora) return "dj";
+  if (felizHasta > ahora) return "feliz";
+  if (abierta && pestana === "inicio" && segmento !== "notion") return "lupa";
+  if (estadoPedido === "error" || sinLeer > 0) return "alerta";
+  if (dormida) return "dormir";
+  return "reposo";
 }
 
-/** Se asoma sola unos segundos, sin robar el foco. */
-function anunciar() {
-  if (estado !== "escondida") return;
-  anunciando = true;
-  cambiarEstado("asomada");
-  window.clearTimeout(temporizadorAnuncio);
-  temporizadorAnuncio = window.setTimeout(() => {
-    anunciando = false;
-    if (estado === "asomada" && !mouseDentro) cambiarEstado("escondida");
-  }, DURACION_ANUNCIO_MS);
+function actualizarCara() {
+  const cara = caraActual();
+  mascotas.compacta.cambiar(cara);
+  mascotas.panel.cambiar(cara);
+  mascotas.toast.cambiar(cara);
+  mascotas.claude.cambiar(cara);
+  mascotas.comer.cambiar(cara);
+  mascotas.zona.cambiar(cara);
 }
 
-// ── Cabecera: mascota + texto de la derecha ───────────────────
-// Prioridad: trabajando > resultado del pedido > avisos sin leer > normal.
-
-function actualizarCabecera() {
-  let texto = hayToken ? "hola" : "sin Notion";
-  if (cancion?.reproduciendo) texto = musicaNueva ? "♪ sonando" : "♪";
-  let cara: EstadoMascota = "reposo";
-  if (estadoPedido === "trabajando") {
-    texto = "pensando";
-    cara = "trabajando";
-  } else if (estadoPedido === "listo") {
-    texto = "¡listo!";
-    cara = felizVigente ? "feliz" : "reposo";
-  } else if (estadoPedido === "error") {
-    texto = "error";
-    cara = "alerta";
-  } else if (sinLeer > 0) {
-    texto = sinLeer === 1 ? "1 aviso" : `${sinLeer} avisos`;
-    cara = "alerta";
-  }
-  if (aturdida) return; // el secreto manda mientras dura
-  textoEstado.textContent = texto;
-  mascota.cambiar(cara);
-}
-
-// ── Vistas del panel ──────────────────────────────────────────
-
-function mostrarVista(nueva: Vista) {
-  vista = nueva;
-  if (nueva !== "pedido") vistaAnterior = nueva;
-  (Object.keys(vistas) as Vista[]).forEach((v) => (vistas[v].hidden = v !== nueva));
-  pestanas.hidden = nueva === "pedido";
-  pestanas.querySelectorAll<HTMLButtonElement>(".pestana").forEach((b) => {
-    b.classList.toggle("activa", b.dataset.vista === nueva);
+function actualizarCaritas() {
+  const estados: Record<string, { on: boolean; viva: boolean }> = {
+    notion: { on: sinLeer > 0, viva: sinLeer > 0 },
+    claude: { on: estadoPedido === "trabajando" || felizHasta > Date.now(), viva: estadoPedido === "trabajando" },
+    musica: { on: !!cancion?.reproduciendo, viva: !!cancion?.reproduciendo },
+    bandeja: { on: bandeja.length > 0, viva: false },
+  };
+  document.querySelectorAll<HTMLSpanElement>(".carita").forEach((c) => {
+    const e = estados[c.dataset.id!];
+    c.classList.toggle("on", e.on);
+    c.classList.toggle("viva", e.viva);
   });
-  if (nueva === "avisos") {
-    sinLeer = 0;
-    actualizarCabecera();
-  }
-  if (nueva === "historial") cargarHistorial();
-  if (nueva === "bandeja") dibujarBandeja();
 }
 
-pestanas.querySelectorAll<HTMLButtonElement>(".pestana").forEach((boton) => {
-  boton.addEventListener("click", () => mostrarVista(boton.dataset.vista as Vista));
-});
+// ══ Tres toques = aturdida ═════════════════════════════════════
+let toques = 0;
+let tToques: number | undefined;
 
-// ── Avisos ────────────────────────────────────────────────────
+function registrarToque(alUnToque?: () => void) {
+  toques += 1;
+  window.clearTimeout(tToques);
+  if (toques >= 3) {
+    toques = 0;
+    aturdirse();
+    return;
+  }
+  tToques = window.setTimeout(() => {
+    const n = toques;
+    toques = 0;
+    if (n === 1 && alUnToque) alUnToque();
+  }, 380);
+}
 
+function aturdirse() {
+  abierta = false;
+  mostrarToast("aturdida");
+  let cuenta = 3;
+  $("#cuenta").textContent = String(cuenta);
+  window.clearInterval(tCuenta);
+  tCuenta = window.setInterval(() => {
+    cuenta -= 1;
+    if (cuenta <= 0) {
+      window.clearInterval(tCuenta);
+      toast = null;
+      actualizar();
+    } else {
+      $("#cuenta").textContent = String(cuenta);
+    }
+  }, 1000);
+}
+
+// ══ Avisos de Notion ═══════════════════════════════════════════
 function dibujarAvisos() {
-  const filas = avisos.map((aviso) => {
-    const li = elemento("li", `aviso ${aviso.tipo}`);
-    li.title = "Abrir en Notion";
-    const texto = elemento("div", "aviso-texto");
-    texto.append(
-      elemento("div", "aviso-titulo", aviso.titulo),
-      elemento("div", "aviso-detalle", `${aviso.base} · ${aviso.tipo} · ${haceCuanto(aviso.editado)}`),
-    );
-    li.append(elemento("span", "punto"), texto);
-    li.addEventListener("click", () => {
-      invoke("abrir_en_notion", { url: aviso.url }).catch((e) => console.error(e));
+  const lista = $<HTMLUListElement>("#lista-avisos");
+  lista.replaceChildren(
+    ...avisos.map((a) => {
+      const li = el("li");
+      const b = el("button");
+      b.type = "button";
+      b.title = "Abrir en Notion";
+      const punto = el("span", "punto");
+      punto.style.background = a.tipo === "nuevo" ? "var(--acento)" : "#8fb8ff";
+      const col = el("span", "t-col");
+      col.append(el("span", "t-titulo", a.titulo), el("span", "t-mini", `${a.base} · ${a.tipo} · ${haceCuanto(a.editado)}`));
+      b.append(punto, col);
+      b.addEventListener("click", () => invoke("abrir_en_notion", { url: a.url }).catch(console.error));
+      li.append(b);
+      return li;
+    }),
+  );
+  $("#sin-avisos").hidden = avisos.length > 0;
+  dibujarResumen();
+}
+
+function dibujarResumen() {
+  const hoy = eventosDelDia(new Date()).length;
+  $("#resumen-derecha").textContent =
+    segmento === "notion" ? `${avisos.length} recientes` : segmento === "calendario" ? `${hoy} hoy` : `${tareas.length} pendientes`;
+}
+
+// ══ Calendario ════════════════════════════════════════════════
+const inicioDelDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const mismoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+const hora = (d: Date) => d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+
+function eventosDelDia(d: Date) {
+  const dia = inicioDelDia(d);
+  return eventos.filter((e) => {
+    const i = new Date(e.inicio);
+    const f = new Date(e.fin);
+    if (!e.todo_el_dia) return mismoDia(i, d);
+    const fin = f > i ? f : new Date(i.getTime() + 86_400_000);
+    return dia >= inicioDelDia(i) && dia < fin;
+  });
+}
+
+/** Mensaje de lista vacía, con un botón opcional para ir a Ajustes. */
+function vacio(p: HTMLElement, texto: string, conectar = false) {
+  p.replaceChildren(texto);
+  if (conectar) {
+    const b = el("button", "boton-sec chico", "Conectar");
+    b.type = "button";
+    b.addEventListener("click", () => invoke("abrir_configuracion", { seccion: "conexiones" }));
+    p.append(" ", b);
+  }
+}
+
+function dibujarSemana() {
+  const hoy = new Date();
+  const nombres = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
+  $("#semana").replaceChildren(
+    ...Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
+      const clases = ["dia", mismoDia(d, hoy) ? "hoy" : "", mismoDia(d, diaElegido) ? "elegido" : ""].join(" ").trim();
+      const caja = el("button", clases);
+      caja.type = "button";
+      caja.append(el("small", "", i === 0 ? "Hoy" : nombres[d.getDay()]), el("b", "", String(d.getDate())));
+      if (eventosDelDia(d).length) caja.append(el("i", "marca"));
+      caja.addEventListener("click", () => {
+        diaElegido = d;
+        dibujarSemana();
+        dibujarEventos();
+      });
+      return caja;
+    }),
+  );
+}
+
+function dibujarEventos() {
+  const ahora = new Date();
+  const delDia = eventosDelDia(diaElegido);
+  $("#lista-eventos").replaceChildren(
+    ...delDia.map((e) => {
+      const i = new Date(e.inicio);
+      const f = new Date(e.fin);
+      const enCurso = !e.todo_el_dia && i <= ahora && f > ahora;
+      const pronto = !e.todo_el_dia && i > ahora && i.getTime() - ahora.getTime() < 15 * 60_000;
+      const li = el("li", f <= ahora && !e.todo_el_dia ? "evento pasado" : "evento");
+      li.append(el("span", enCurso ? "barrita en-curso" : "barrita"));
+      const col = el("span", "t-col");
+      const cuando = e.todo_el_dia ? "Todo el día" : `${hora(i)} – ${hora(f)}`;
+      col.append(el("span", "t-titulo", e.titulo), el("span", "t-mini", e.lugar ? `${cuando} · ${e.lugar}` : cuando));
+      li.append(col);
+      if (e.enlace) {
+        const b = el("button", enCurso || pronto ? "unirse ya" : "unirse", enCurso || pronto ? "Unirse" : "Enlace");
+        b.type = "button";
+        b.title = e.enlace;
+        b.addEventListener("click", () => invoke("abrir_enlace", { url: e.enlace }).catch(console.error));
+        li.append(b);
+      }
+      return li;
+    }),
+  );
+  const p = $("#sin-eventos");
+  p.hidden = delDia.length > 0;
+  if (!conexiones.calendario) vacio(p, "Conecta Google Calendar para ver tus reuniones aquí.", true);
+  else if (errorCalendario) vacio(p, errorCalendario);
+  else vacio(p, mismoDia(diaElegido, ahora) ? "Nada en tu agenda hoy." : "Día libre.");
+  dibujarResumen();
+}
+
+async function cargarCalendario() {
+  if (!conexiones.calendario) {
+    eventos = [];
+    errorCalendario = "";
+  } else {
+    try {
+      eventos = await invoke<Evento[]>("eventos_calendario");
+      errorCalendario = "";
+    } catch (error) {
+      errorCalendario = String(error);
+    }
+  }
+  dibujarSemana();
+  dibujarEventos();
+}
+
+/** Avisa con un toast unos minutos antes de cada reunión. */
+function revisarReuniones() {
+  const ahora = Date.now();
+  for (const e of eventos) {
+    if (e.todo_el_dia) continue;
+    const falta = new Date(e.inicio).getTime() - ahora;
+    const clave = `${e.titulo}|${e.inicio}`;
+    if (falta > 0 && falta <= AVISO_REUNION_MIN * 60_000 && !reunionesAvisadas.has(clave)) {
+      reunionesAvisadas.add(clave);
+      reunionToast = e;
+      const min = Math.max(1, Math.round(falta / 60_000));
+      $("#toast-titulo").textContent = `Tu reunión empieza en ${min} min`;
+      $("#toast-cuerpo").textContent = `${e.titulo} · ${hora(new Date(e.inicio))}`;
+      $("#toast-accion").textContent = e.enlace ? "Unirse" : "Ver";
+      felizHasta = ahora + 3000;
+      mostrarToast("reunion", 12_000);
+      return;
+    }
+  }
+}
+
+// ══ Tareas (ClickUp y Asana) ═══════════════════════════════════
+function cuandoVence(iso: string) {
+  const d = new Date(iso);
+  const hoy = inicioDelDia(new Date());
+  const dias = Math.round((inicioDelDia(d).getTime() - hoy.getTime()) / 86_400_000);
+  if (d.getTime() < Date.now()) return { texto: "vencida", tarde: true };
+  if (dias === 0) return { texto: "vence hoy", tarde: false };
+  if (dias === 1) return { texto: "vence mañana", tarde: false };
+  if (dias < 7) return { texto: `vence el ${d.toLocaleDateString("es", { weekday: "long" })}`, tarde: false };
+  return { texto: `vence el ${d.toLocaleDateString("es", { day: "numeric", month: "short" })}`, tarde: false };
+}
+
+function dibujarTareas() {
+  $("#lista-tareas").replaceChildren(
+    ...tareas.map((t) => {
+      const li = el("li");
+      const b = el("button");
+      b.type = "button";
+      b.title = `Abrir en ${t.app === "clickup" ? "ClickUp" : "Asana"}`;
+      const punto = el("span", "punto");
+      punto.style.background = COLOR_TAREA[t.app];
+      const col = el("span", "t-col");
+      const vence = t.vence ? cuandoVence(t.vence) : null;
+      const mini = el("span", vence?.tarde ? "t-mini tarde" : "t-mini", [t.lugar, vence?.texto].filter(Boolean).join(" · ") || "sin fecha");
+      col.append(el("span", "t-titulo", t.titulo), mini);
+      b.append(punto, col);
+      b.addEventListener("click", () => invoke("abrir_enlace", { url: t.url }).catch(console.error));
+      li.append(b);
+      return li;
+    }),
+  );
+  const p = $("#sin-tareas");
+  p.hidden = tareas.length > 0 && erroresTareas.length === 0;
+  if (!conexiones.clickup && !conexiones.asana) vacio(p, "Conecta ClickUp o Asana para ver tus tareas pendientes.", true);
+  else if (erroresTareas.length) vacio(p, erroresTareas.join(" "));
+  else vacio(p, "No tienes tareas pendientes. ¡Bien!");
+  dibujarResumen();
+}
+
+async function cargarTareas() {
+  if (!conexiones.clickup && !conexiones.asana) {
+    tareas = [];
+    erroresTareas = [];
+  } else {
+    try {
+      const r = await invoke<Tareas>("tareas_pendientes");
+      tareas = r.tareas;
+      erroresTareas = r.errores;
+    } catch (error) {
+      erroresTareas = [String(error)];
+    }
+  }
+  dibujarTareas();
+}
+
+function elegirSegmento(s: Segmento) {
+  segmento = s;
+  document.querySelectorAll<HTMLButtonElement>(".segmentos button").forEach((b) => b.classList.toggle("activo", b.dataset.seg === s));
+  $("#seg-notion").hidden = s !== "notion";
+  $("#seg-calendario").hidden = s !== "calendario";
+  $("#seg-tareas").hidden = s !== "tareas";
+  if (s === "notion") sinLeer = 0;
+  if (s === "calendario") {
+    diaElegido = new Date();
+    dibujarSemana();
+    dibujarEventos();
+  }
+  dibujarAvisos();
+  actualizar();
+}
+
+// ══ Música ═════════════════════════════════════════════════════
+function crearControles() {
+  document.querySelectorAll<HTMLSpanElement>(".controles").forEach((grupo) => {
+    (["favorito", "anterior", "alternar", "siguiente"] as const).forEach((accion) => {
+      const b = el("button", accion === "alternar" || accion === "favorito" ? accion : "");
+      b.type = "button";
+      b.dataset.accion = accion;
+      b.setAttribute("aria-label", { favorito: "Guardar en favoritos", anterior: "Anterior", alternar: "Reproducir o pausar", siguiente: "Siguiente" }[accion]);
+      b.innerHTML = accion === "alternar" ? ICONOS.pausa : ICONOS[accion];
+      b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!cancion) return;
+        if (accion === "favorito") {
+          favorita = await invoke<boolean | null>("favorito_musica", { appMusica: cancion.app, cambiar: true }).catch(() => favorita);
+          dibujarMusica();
+          return;
+        }
+        try {
+          await invoke("controlar_musica", { appMusica: cancion.app, accion });
+          recibirCancion(await invoke<Cancion>("musica_actual"));
+        } catch (error) {
+          console.error(error);
+        }
+      });
+      grupo.append(b);
     });
-    return li;
   });
-  listaAvisos.replaceChildren(...filas);
-  sinAvisos.hidden = avisos.length > 0;
 }
-
-// ── Historial ─────────────────────────────────────────────────
-
-async function cargarHistorial() {
-  const entradas = await invoke<Entrada[]>("historial");
-  const filas = entradas.map((entrada) => {
-    const li = elemento("li", `aviso entrada${entrada.ok ? "" : " fallida"}`);
-    li.title = "Clic para ver la respuesta completa";
-    const texto = elemento("div", "aviso-texto");
-    texto.append(
-      elemento("div", "aviso-titulo", entrada.pedido),
-      elemento("div", "aviso-detalle", `${haceCuanto(entrada.fecha)} · ${entrada.resultado}`),
-    );
-    li.append(elemento("span", "marca", entrada.ok ? "✓" : "✕"), texto);
-    li.addEventListener("click", () => li.classList.toggle("abierta"));
-    return li;
-  });
-  listaHistorial.replaceChildren(...filas);
-  sinHistorial.hidden = entradas.length > 0;
-}
-
-// ── Pedidos a Claude Code ─────────────────────────────────────
-
-function agregarPaso(tipo: Progreso["tipo"], texto: string) {
-  pasos.append(elemento("li", tipo, texto));
-  vistas.pedido.scrollTop = vistas.pedido.scrollHeight;
-}
-
-function terminarPedido(ok: boolean, resultado: string) {
-  estadoPedido = ok ? "listo" : "error";
-  vistas.pedido.classList.remove("trabajando-ahora");
-  pedidoResultado.textContent = resultado;
-  pedidoResultado.classList.toggle("error", !ok);
-  pedidoResultado.hidden = false;
-  botonCancelar.hidden = true;
-  botonListo.hidden = false;
-  campoPedido.disabled = false;
-  campoPedido.placeholder = "Pídele algo a Sylvie… (Enter para enviar)";
-  vistas.pedido.scrollTop = vistas.pedido.scrollHeight;
-
-  // La cara feliz dura unos segundos; el resultado queda en pantalla hasta pulsar "Listo".
-  window.clearTimeout(temporizadorFeliz);
-  felizVigente = ok;
-  if (ok) {
-    temporizadorFeliz = window.setTimeout(() => {
-      felizVigente = false;
-      actualizarCabecera();
-    }, DURACION_FELIZ_MS);
-  }
-  actualizarCabecera();
-  if (estado !== "expandida") anunciar();
-}
-
-formPedido.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const texto = campoPedido.value.trim();
-  if (!texto || estadoPedido === "trabajando") return;
-
-  estadoPedido = "trabajando";
-  pedidoTexto.textContent = texto;
-  pasos.replaceChildren();
-  pedidoResultado.hidden = true;
-  botonCancelar.hidden = false;
-  botonListo.hidden = true;
-  campoPedido.value = "";
-  campoPedido.disabled = true;
-  campoPedido.placeholder = "Sylvie está trabajando…";
-  vistas.pedido.classList.add("trabajando-ahora");
-  mostrarVista("pedido");
-  actualizarCabecera();
-
-  try {
-    await invoke("enviar_pedido", { texto });
-  } catch (error) {
-    terminarPedido(false, String(error));
-  }
-});
-
-botonCancelar.addEventListener("click", () => {
-  invoke("cancelar_pedido");
-  botonCancelar.disabled = true;
-  setTimeout(() => (botonCancelar.disabled = false), 1500);
-});
-
-botonListo.addEventListener("click", () => {
-  estadoPedido = "ninguno";
-  felizVigente = false;
-  window.clearTimeout(temporizadorFeliz);
-  mostrarVista(vistaAnterior);
-  actualizarCabecera();
-  campoPedido.focus();
-});
-
-// ── Música (Spotify / Apple Music) ────────────────────────────
 
 function dibujarMusica() {
-  barraMusica.hidden = !cancion;
-  document.body.classList.toggle("con-musica", !!cancion);
-  if (cancion) {
-    musicaTitulo.textContent = cancion.titulo;
-    musicaArtista.textContent = [cancion.artista, cancion.app].filter(Boolean).join(" · ");
-    botonAlternar.textContent = cancion.reproduciendo ? "⏸" : "▶";
+  const titulo = cancion?.titulo ?? "Nada sonando";
+  const artista = cancion ? [cancion.artista, cancion.app].filter(Boolean).join(" · ") : "Abre Spotify o Música";
+  $("#inicio-titulo").textContent = titulo;
+  $("#inicio-artista").textContent = artista;
+  $("#cancion-titulo").textContent = titulo;
+  $("#cancion-artista").textContent = artista;
+  document.querySelectorAll<HTMLSpanElement>(".insignia").forEach((i) => {
+    if (cancion && PLATAFORMAS[cancion.app]) {
+      i.style.background = PLATAFORMAS[cancion.app];
+      i.title = cancion.app;
+      i.innerHTML = NOTA_SVG;
+    } else {
+      i.innerHTML = "";
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>(".controles .alternar").forEach((b) => {
+    b.innerHTML = cancion?.reproduciendo ? ICONOS.pausa : ICONOS.play;
+  });
+  document.querySelectorAll<HTMLButtonElement>(".controles .favorito").forEach((b) => {
+    b.classList.toggle("on", favorita === true);
+    b.disabled = favorita === null;
+    b.title = favorita === null ? "Favoritos solo está disponible con Apple Music" : "Guardar en favoritos";
+  });
+  document.querySelectorAll<HTMLSpanElement>(".controles").forEach((g) => (g.style.visibility = cancion ? "visible" : "hidden"));
+  dibujarProgreso();
+}
+
+function reloj(seg: number) {
+  const s = Math.max(0, Math.round(seg));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function dibujarProgreso() {
+  const dur = cancion?.duracion || 0;
+  const pct = dur > 0 ? Math.min(100, (posicion / dur) * 100) : 0;
+  for (const id of ["inicio", "cancion"]) {
+    const barra = $<HTMLInputElement>(`#${id}-barra`);
+    if (!moviendoBarra) barra.value = String(pct);
+    const p = moviendoBarra ? Number(barra.value) : pct;
+    barra.style.background = `linear-gradient(to right, #f4f4f6 ${p}%, #2a2b33 ${p}%)`;
+    barra.disabled = !cancion;
+    $(`#${id}-actual`).textContent = reloj(moviendoBarra ? (p / 100) * dur : posicion);
+    $(`#${id}-total`).textContent = reloj(dur);
   }
-  actualizarCabecera();
+}
+
+async function cargarPortada() {
+  const imgs = [$<HTMLImageElement>("#inicio-img"), $<HTMLImageElement>("#cancion-img")];
+  imgs.forEach((i) => (i.hidden = true));
+  if (!cancion) return;
+  const url = await invoke<string | null>("portada_musica").catch(() => null);
+  if (!url || !cancion || cancion.clave !== clavePortada) return;
+  imgs.forEach((i) => {
+    i.src = url;
+    i.hidden = false;
+  });
+}
+
+// La barra de progreso se puede arrastrar: al soltar, mueve la canción.
+for (const id of ["inicio", "cancion"]) {
+  const barra = $<HTMLInputElement>(`#${id}-barra`);
+  barra.addEventListener("input", () => {
+    moviendoBarra = true;
+    dibujarProgreso();
+  });
+  barra.addEventListener("change", async () => {
+    if (!cancion) return;
+    posicion = (Number(barra.value) / 100) * cancion.duracion;
+    moviendoBarra = false;
+    dibujarProgreso();
+    await invoke("mover_musica", { appMusica: cancion.app, segundos: posicion }).catch(console.error);
+  });
+  barra.addEventListener("click", (e) => e.stopPropagation());
 }
 
 function recibirCancion(nueva: Cancion) {
   const anterior = cancion;
   cancion = nueva;
+  if (nueva) posicion = nueva.posicion;
+  if ((nueva?.clave || "") !== clavePortada) {
+    clavePortada = nueva?.clave || "";
+    favorita = null;
+    cargarPortada();
+    if (nueva) {
+      invoke<boolean | null>("favorito_musica", { appMusica: nueva.app, cambiar: false })
+        .then((f) => {
+          favorita = f;
+          dibujarMusica();
+        })
+        .catch(() => {});
+    }
+  }
   dibujarMusica();
-  // Canción nueva (no la primera que detecta): asomarse unos segundos.
-  if (nueva?.reproduciendo && anterior && anterior.titulo !== nueva.titulo) {
-    musicaNueva = true;
-    actualizarCabecera();
-    anunciar();
-    window.setTimeout(() => {
-      musicaNueva = false;
-      actualizarCabecera();
-    }, DURACION_ANUNCIO_MS);
+  if (nueva && anterior && anterior.titulo !== nueva.titulo) {
+    // Modo DJ: 3 cambios de canción en menos de 20 segundos.
+    const ahora = Date.now();
+    cambiosCancion = [...cambiosCancion.filter((t) => ahora - t < 20000), ahora];
+    if (cambiosCancion.length >= 3) djHasta = ahora + 8000;
+    if (nueva.reproduciendo && !abierta) mostrarToast("cancion");
+  }
+  actualizar();
+}
+
+// ══ Pedidos a Claude ═══════════════════════════════════════════
+function dibujarPasos() {
+  const trabajando = estadoPedido === "trabajando";
+  $("#pasos").replaceChildren(
+    ...pasos.map((texto, i) => {
+      const ultimo = i === pasos.length - 1;
+      const clase = trabajando && ultimo ? "activo" : "hecho";
+      const li = el("li", clase);
+      li.append(el("span", "ico"), el("span", "", texto.replace(/…$/, "")));
+      return li;
+    }),
+  );
+}
+
+async function cargarHistorial() {
+  const entradas = await invoke<Entrada[]>("historial");
+  $("#historial").replaceChildren(
+    ...entradas.slice(0, 4).map((e) => {
+      const li = el("li", e.ok ? "" : "fallo");
+      li.title = e.resultado;
+      li.append(el("b", "", e.ok ? "✓" : "✕"), el("span", "", `${e.pedido} · ${haceCuanto(e.fecha)}`));
+      return li;
+    }),
+  );
+}
+
+function prepararConversacion(pedido: string) {
+  const burbuja = $("#pedido-burbuja");
+  burbuja.textContent = pedido;
+  burbuja.hidden = false;
+  $("#comentario").hidden = true;
+  $("#resultado").hidden = true;
+  $("#bienvenida-chat").hidden = true;
+}
+
+async function enviarPedido() {
+  const campo = $<HTMLTextAreaElement>("#pedido");
+  const texto = campo.value.trim();
+  if (!texto || estadoPedido === "trabajando") return;
+  estadoPedido = "trabajando";
+  pasos = [];
+  campo.value = "";
+  campo.disabled = true;
+  $<HTMLButtonElement>("#enviar-pedido").disabled = true;
+  $("#cancelar-pedido").hidden = false;
+  prepararConversacion(texto);
+  dibujarPasos();
+  actualizar();
+  try {
+    await invoke("enviar_pedido", { texto });
+  } catch (error) {
+    terminarPedido(false, String(error));
   }
 }
 
-barraMusica.querySelectorAll<HTMLButtonElement>("button[data-accion]").forEach((boton) => {
-  boton.addEventListener("click", async () => {
-    if (!cancion) return;
-    try {
-      await invoke("controlar_musica", { appMusica: cancion.app, accion: boton.dataset.accion });
-      recibirCancion(await invoke<Cancion>("musica_actual"));
-    } catch (error) {
-      musicaArtista.textContent = String(error);
-    }
-  });
-});
+function terminarPedido(ok: boolean, resultado: string) {
+  estadoPedido = ok ? "listo" : "error";
+  ultimoResultado = resultado;
+  if (ok) felizHasta = Date.now() + DURACION_FELIZ_MS;
+  const r = $("#resultado");
+  r.textContent = resultado;
+  r.classList.toggle("error", !ok);
+  r.hidden = false;
+  $("#comentario").hidden = true;
+  const campo = $<HTMLTextAreaElement>("#pedido");
+  campo.disabled = false;
+  $<HTMLButtonElement>("#enviar-pedido").disabled = false;
+  $("#cancelar-pedido").hidden = true;
+  dibujarPasos();
+  cargarHistorial();
+  if (!abierta) mostrarToast("listo", 6000);
+  actualizar();
+}
 
-// ── Bandeja de archivos y AirDrop ─────────────────────────────
-
-function nombreArchivo(ruta: string): string {
+// ══ Bandeja y AirDrop ══════════════════════════════════════════
+function nombreArchivo(ruta: string) {
   return ruta.split(/[\\/]/).pop() || ruta;
 }
 
 function dibujarBandeja() {
-  const filas = bandeja.map((ruta) => {
-    const li = elemento("li", "aviso archivo");
-    const texto = elemento("div", "aviso-texto");
-    const nombre = elemento("div", "aviso-titulo nombre", nombreArchivo(ruta));
-    nombre.title = "Mostrar en Finder";
-    nombre.addEventListener("click", () => {
-      invoke("mostrar_en_finder", { ruta }).catch((e) => (mensajeBandeja.textContent = String(e)));
-    });
-    texto.append(nombre);
-    const quitar = elemento("button", "quitar", "×");
-    quitar.title = "Quitar de la bandeja (no borra el archivo)";
-    quitar.addEventListener("click", () => {
-      bandeja = bandeja.filter((r) => r !== ruta);
-      dibujarBandeja();
-    });
-    li.append(elemento("span", "punto"), texto, quitar);
-    return li;
+  $("#lista-bandeja").replaceChildren(
+    ...bandeja.map((ruta) => {
+      const caja = el("div", "archivo");
+      const nombre = nombreArchivo(ruta);
+      const icono = el("button", "icono-archivo", (nombre.split(".").pop() || "").toUpperCase().slice(0, 4));
+      icono.title = "Mostrar en Finder";
+      icono.addEventListener("click", () => invoke("mostrar_en_finder", { ruta }).catch((e) => ($("#mensaje-bandeja").textContent = String(e))));
+      const quitar = el("button", "quitar", "×");
+      quitar.title = "Quitar de la bandeja (no borra el archivo)";
+      quitar.addEventListener("click", () => {
+        bandeja = bandeja.filter((r) => r !== ruta);
+        dibujarBandeja();
+      });
+      caja.append(icono, el("span", "nombre", nombre), quitar);
+      return caja;
+    }),
+  );
+  $("#sin-bandeja").hidden = bandeja.length > 0;
+  $("#acciones-bandeja").hidden = bandeja.length === 0;
+  const contador = $("#contador-bandeja");
+  contador.textContent = String(bandeja.length);
+  contador.hidden = bandeja.length === 0;
+  $("#texto-airdrop").textContent = bandeja.length ? `Enviar ${bandeja.length} ${bandeja.length === 1 ? "archivo" : "archivos"}` : "Sin archivos";
+  actualizarCaritas();
+}
+
+// ══ Conexiones ═════════════════════════════════════════════════
+function dibujarConexiones() {
+  $("#apps").replaceChildren(
+    ...APPS.map((a) => {
+      const tarjeta = el("div", "app");
+      const cabeza = el("div", "cabeza");
+      const letra = el("span", "letra", a.letra);
+      letra.style.background = a.color;
+      cabeza.append(letra, el("span", "nombre", a.nombre));
+      const boton = el("button");
+      boton.type = "button";
+      const ajustes = (seccion: string) => () => invoke("abrir_configuracion", { seccion });
+      if (a.id in conexiones) {
+        const ok = conexiones[a.id];
+        boton.textContent = ok ? "Conectada ✓" : "Conectar";
+        boton.className = ok ? "conectada" : "conectar";
+        boton.addEventListener("click", ajustes(a.id === "notion" ? "notion" : "conexiones"));
+      } else if (a.id === "claude") {
+        boton.textContent = "Elegir apps";
+        boton.className = "conectada";
+        boton.addEventListener("click", ajustes("claude"));
+      } else if (a.id === "musica") {
+        boton.textContent = "En tu Mac ✓";
+        boton.className = "conectada";
+        boton.addEventListener("click", () => invoke("abrir_app", { cual: "musica" }));
+      } else if (a.id === "mas") {
+        boton.textContent = "Ver en Ajustes";
+        boton.className = "conectada";
+        boton.addEventListener("click", ajustes("claude"));
+      } else {
+        boton.textContent = "Próximamente";
+        boton.disabled = true;
+      }
+      tarjeta.append(cabeza, el("span", "detalle", a.detalle), boton);
+      return tarjeta;
+    }),
+  );
+}
+
+async function actualizarConexiones() {
+  try {
+    const lista = await invoke<EstadoApp[]>("estado_conexiones");
+    conexiones = Object.fromEntries(lista.map((a) => [a.id, a.conectada]));
+  } catch {
+    conexiones = {};
+  }
+  dibujarConexiones();
+  cargarCalendario();
+  cargarTareas();
+}
+
+// ══ Caritas-botón del notch compacto ═══════════════════════════
+function accionCarita(id: string) {
+  if (id === "notion") invoke("abrir_app", { cual: "notion" }).catch(console.error);
+  else if (id === "musica") invoke("abrir_app", { cual: "musica" }).catch(console.error);
+  else if (id === "claude") abrir("claude");
+  else if (id === "bandeja") abrir("bandeja");
+}
+
+// ══ Eventos de la interfaz ═════════════════════════════════════
+$("#capa-compacta").addEventListener("click", () => registrarToque(() => abrir()));
+document.querySelectorAll<HTMLButtonElement>(".carita").forEach((c) => {
+  c.addEventListener("click", (e) => {
+    e.stopPropagation(); // no cuenta como toque a Sylvie
+    accionCarita(c.dataset.id!);
   });
-  listaBandeja.replaceChildren(...filas);
-  sinBandeja.hidden = bandeja.length > 0;
-  accionesBandeja.hidden = bandeja.length === 0;
-  pestanaBandeja.textContent = bandeja.length ? `Bandeja (${bandeja.length})` : "Bandeja";
-}
+});
+$("#m-panel-btn").addEventListener("click", () => registrarToque());
+$("#cerrar").addEventListener("click", () => cerrar(true));
+$("#capa-toast").addEventListener("click", () => {
+  if (toast === "listo") abrir("claude");
+  else if (toast === "reunion" && reunionToast?.enlace) {
+    invoke("abrir_enlace", { url: reunionToast.enlace }).catch(console.error);
+    toast = null;
+    actualizar();
+  } else if (toast === "reunion") {
+    abrir("inicio");
+    elegirSegmento("calendario");
+  } else abrir("inicio");
+});
+$("#cancion-portada").addEventListener("click", () => abrir("inicio"));
 
-function agregarABandeja(rutas: string[]) {
-  bandeja = [...bandeja, ...rutas.filter((r) => !bandeja.includes(r))];
-  mensajeBandeja.textContent = "";
-  dibujarBandeja();
-}
-
-$<HTMLButtonElement>("#vaciar-bandeja").addEventListener("click", () => {
-  bandeja = [];
-  mensajeBandeja.textContent = "";
-  dibujarBandeja();
+document.querySelectorAll<HTMLButtonElement>(".pastilla[data-pestana]").forEach((b) => {
+  b.addEventListener("click", () => irA(b.dataset.pestana as Pestana));
+});
+document.querySelectorAll<HTMLButtonElement>(".segmentos button").forEach((b) => {
+  b.addEventListener("click", () => elegirSegmento(b.dataset.seg as Segmento));
 });
 
-$<HTMLButtonElement>("#enviar-airdrop").addEventListener("click", async () => {
+$("#form-pedido").addEventListener("submit", (e) => {
+  e.preventDefault();
+  enviarPedido();
+});
+$<HTMLTextAreaElement>("#pedido").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    enviarPedido();
+  }
+});
+$("#cancelar-pedido").addEventListener("click", () => invoke("cancelar_pedido"));
+
+$("#enviar-airdrop").addEventListener("click", async () => {
+  if (!bandeja.length) return;
   try {
     await invoke("enviar_por_airdrop", { rutas: bandeja });
-    mensajeBandeja.textContent = "Abriendo AirDrop…";
+    $("#mensaje-bandeja").textContent = "Abriendo AirDrop…";
   } catch (error) {
-    mensajeBandeja.textContent = String(error);
+    $("#mensaje-bandeja").textContent = String(error);
   }
 });
+$("#vaciar-bandeja").addEventListener("click", () => {
+  bandeja = [];
+  $("#mensaje-bandeja").textContent = "";
+  dibujarBandeja();
+});
+$("#abrir-ajustes").addEventListener("click", () => invoke("abrir_configuracion", { seccion: "conexiones" }));
 
-// Arrastrar archivos sobre el notch: se abre el panel en la pestaña Bandeja.
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && abierta) cerrar(true);
+});
+
+// Al hacer clic fuera, el panel se cierra… salvo en la Bandeja: ahí esperamos un rato,
+// para que puedas ir al Finder, agarrar un archivo y volver arrastrándolo.
+let tGracia: number | undefined;
+function cerrarTrasGracia() {
+  window.clearTimeout(tGracia);
+  tGracia = window.setTimeout(() => {
+    if (!abierta || pestana !== "bandeja") return;
+    if (mouseDentro || arrastrando || comiendo) cerrarTrasGracia();
+    else cerrar();
+  }, GRACIA_BANDEJA_MS);
+}
+
+getCurrentWindow().onFocusChanged(({ payload: enfocada }) => {
+  window.clearTimeout(tGracia);
+  if (enfocada || !abierta || arrastrando || comiendo || pestana === "bienvenida") return;
+  if (pestana === "bandeja") cerrarTrasGracia();
+  else cerrar();
+});
+
+// Arrastrar archivos sobre el notch → Sylvie abre la boca y se los "come" hacia la Bandeja.
+function etiquetaArchivos(rutas: string[]) {
+  if (rutas.length > 1) return String(rutas.length);
+  return (nombreArchivo(rutas[0] || "").split(".").pop() || "").toUpperCase().slice(0, 4) || "DOC";
+}
+
+function textosComer(titulo: string, cuerpo: string) {
+  $("#comer-titulo").textContent = titulo;
+  $("#comer-cuerpo").textContent = cuerpo;
+  $("#zona-titulo").textContent = titulo;
+  $("#zona-cuerpo").textContent = cuerpo;
+}
+
+function claseVolador(clase: "tiembla" | "tragado", etiqueta?: string) {
+  for (const v of [$("#volador"), $("#volador-zona")]) {
+    if (etiqueta) v.textContent = etiqueta;
+    v.classList.remove("tiembla", "tragado");
+    void v.offsetWidth; // reinicia la animación
+    v.classList.add(clase);
+  }
+}
+
 getCurrentWebview().onDragDropEvent(({ payload }) => {
   if (payload.type === "enter") {
+    arrastrando = true;
+    comiendo = "encima";
     document.body.classList.add("arrastrando");
-    if (estado !== "expandida") {
-      expandidaPorArrastre = true;
-      cambiarEstado("expandida", false); // sin robar el foco mientras arrastras
-    }
+    claseVolador("tiembla", etiquetaArchivos(payload.paths));
+    textosComer("¡Dámelo!", abierta ? "Suéltalo aquí y lo guardo en la bandeja." : "Suéltalo y lo guardo en la bandeja.");
+    toast = null;
+    if (abierta) pestana = "bandeja"; // con el panel abierto: no se cierra, salta a Bandeja
+    actualizar();
   } else if (payload.type === "leave") {
+    if (comiendo === "comiendo") return;
+    arrastrando = false;
+    comiendo = null;
     document.body.classList.remove("arrastrando");
-    if (expandidaPorArrastre) {
-      expandidaPorArrastre = false;
-      cambiarEstado("escondida");
-    }
+    actualizar();
   } else if (payload.type === "drop") {
+    arrastrando = false;
     document.body.classList.remove("arrastrando");
-    expandidaPorArrastre = false;
-    agregarABandeja(payload.paths);
-    if (estadoPedido === "ninguno") mostrarVista("bandeja");
-    invoke("enfocar"); // así un clic fuera vuelve a cerrar el panel
+    const nuevos = payload.paths.filter((r) => !bandeja.includes(r));
+    const quien = payload.paths.length === 1 ? `«${nombreArchivo(payload.paths[0])}»` : `${payload.paths.length} archivos`;
+    comiendo = "comiendo";
+    textosComer("¡Ñam, ñam, ñam!", `${quien} ya ${payload.paths.length === 1 ? "está" : "están"} en la bandeja.`);
+    claseVolador("tragado");
+    actualizar();
+    window.setTimeout(() => {
+      comiendo = null;
+      bandeja = [...bandeja, ...nuevos];
+      felizHasta = Date.now() + 3000;
+      dibujarBandeja();
+      abrir("bandeja"); // con foco: un clic fuera vuelve a cerrar
+    }, 1500);
   }
 });
 
-// ── Eventos desde Rust ────────────────────────────────────────
-
+// ══ Eventos desde Rust ═════════════════════════════════════════
 listen<boolean>("cursor-notch", ({ payload: dentro }) => {
   mouseDentro = dentro;
-  window.clearTimeout(temporizadorSalida);
+  window.clearTimeout(tSalida);
+  if (dentro) dormida = false;
   if (!dentro) esperarSalida = false;
   if (esperarSalida) return;
   if (dentro) {
-    if (estado === "escondida") cambiarEstado("asomada");
-  } else if (estado === "asomada" && !anunciando) {
-    temporizadorSalida = window.setTimeout(() => cambiarEstado("escondida"), ESPERA_SALIDA_MS);
+    if (!hover) {
+      hover = true;
+      actualizar();
+    }
+  } else {
+    tSalida = window.setTimeout(() => {
+      hover = false;
+      actualizar();
+    }, ESPERA_SALIDA_MS);
   }
 });
 
 listen<Aviso[]>("avisos-nuevos", ({ payload: nuevos }) => {
   avisos = [...nuevos, ...avisos].slice(0, MAX_AVISOS);
   dibujarAvisos();
-  if (estado === "expandida" && vista === "avisos") return;
+  if (abierta && pestana === "inicio" && segmento === "notion") return;
   sinLeer += nuevos.length;
-  actualizarCabecera();
-  anunciar();
+  const primero = nuevos[0];
+  $("#toast-titulo").textContent = nuevos.length === 1 ? `Nuevo en ${primero.base}` : `${nuevos.length} novedades en Notion`;
+  $("#toast-cuerpo").textContent = `«${primero.titulo}» · ${primero.tipo} · ahora`;
+  $("#toast-accion").textContent = "Ver";
+  mostrarToast("aviso");
 });
 
 listen<Progreso>("claude-progreso", ({ payload }) => {
-  if (estadoPedido === "trabajando") agregarPaso(payload.tipo, payload.texto);
+  if (estadoPedido !== "trabajando") return;
+  if (payload.tipo === "paso") {
+    pasos.push(payload.texto);
+    dibujarPasos();
+  } else {
+    const c = $("#comentario");
+    c.textContent = payload.texto;
+    c.hidden = false;
+  }
 });
 
 listen<Fin>("claude-fin", ({ payload }) => {
   terminarPedido(payload.ok, payload.resultado);
-  if (vista === "historial") cargarHistorial();
+  if (!abierta) {
+    $("#toast-titulo").textContent = payload.ok ? "¡Listo!" : "Algo salió mal";
+    $("#toast-cuerpo").textContent = ultimoResultado;
+    $("#toast-accion").textContent = "Ver";
+  }
 });
 
 listen<Cancion>("musica", ({ payload }) => recibirCancion(payload));
-
-listen("ajustes-cambiados", async () => {
-  await actualizarToken();
+listen("ajustes-cambiados", actualizarConexiones);
+listen("conexiones-cambiadas", actualizarConexiones);
+listen("desbloqueo", () => {
+  dormida = false;
+  bienvenida();
 });
 
-// ── Interacción general ───────────────────────────────────────
-
-function clicCabecera() {
-  if (estado === "asomada") cambiarEstado("expandida");
-  else if (estado === "expandida") cerrarPanel();
-}
-
-cabecera.addEventListener("click", clicCabecera);
-
-// ── Secreto: 3 toques seguidos a la mascota ───────────────────
-// Un toque solo se comporta como un clic normal (abre/cierra el panel),
-// pero se espera un instante por si llegan más toques.
-
-let toques = 0;
-let temporizadorToques: number | undefined;
-
-function aturdir() {
-  aturdida = true;
-  mascota.cambiar("aturdido");
-  const frases = ["¡hey!", "espera…", "3…", "2…", "1…"];
-  frases.forEach((frase, i) => {
-    window.setTimeout(() => (textoEstado.textContent = frase), i * 750);
-  });
-  window.setTimeout(() => {
-    aturdida = false;
-    actualizarCabecera();
-  }, frases.length * 750);
-}
-
-$<HTMLCanvasElement>("#mascota").addEventListener("click", (e) => {
-  e.stopPropagation(); // la cabecera no debe reaccionar de inmediato
-  toques += 1;
-  window.clearTimeout(temporizadorToques);
-  if (toques >= 3) {
-    toques = 0;
-    if (!aturdida) aturdir();
-    return;
-  }
-  temporizadorToques = window.setTimeout(() => {
-    if (toques === 1) clicCabecera();
-    toques = 0;
-  }, VENTANA_TOQUES_MS);
-});
-
-$<HTMLButtonElement>("#abrir-configuracion").addEventListener("click", () => {
-  invoke("abrir_configuracion");
-});
-
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && estado === "expandida") cerrarPanel();
-});
-
-getCurrentWindow().onFocusChanged(({ payload: enfocada }) => {
-  if (!enfocada && estado === "expandida") cambiarEstado("escondida");
-});
-
-// ── Arranque ──────────────────────────────────────────────────
-
-async function actualizarToken() {
+// ══ Dormir: revisa cada 15 s cuánto llevas sin usar la Mac ═════
+async function revisarInactividad() {
   try {
-    hayToken = await invoke<boolean>("hay_token");
+    const seg = await invoke<number>("segundos_inactivo");
+    const antes = dormida;
+    dormida = seg >= DORMIR_TRAS_SEG;
+    if (antes !== dormida) actualizarCara();
   } catch {
-    hayToken = false;
+    /* sin dato: no pasa nada */
   }
-  actualizarCabecera();
 }
 
+// ══ Arranque ═══════════════════════════════════════════════════
 async function iniciar() {
-  aplicarEstado("escondida");
-  mostrarVista("avisos");
-  await actualizarToken();
+  crearControles();
+  elegirSegmento("notion");
+  dibujarBandeja();
+  await actualizarConexiones();
   avisos = await invoke<Aviso[]>("avisos_recientes");
   dibujarAvisos();
-  window.setInterval(dibujarAvisos, 60_000); // refrescar "hace X min"
-  dibujarBandeja();
+  cargarHistorial();
   recibirCancion(await invoke<Cancion>("musica_actual"));
+  mascotas.grande.cambiar("reposo");
+  actualizar();
+  bienvenida();
+
+  window.setInterval(() => {
+    actualizarCara(); // expira "feliz" y "dj" a su tiempo
+    actualizarCaritas();
+    if (cancion?.reproduciendo && !moviendoBarra) {
+      posicion = Math.min(cancion.duracion, posicion + 1);
+      dibujarProgreso();
+    }
+  }, 1000);
+  window.setInterval(() => {
+    dibujarAvisos();
+    if (segmento === "calendario") dibujarEventos(); // "en curso" / "Unirse"
+  }, 60_000);
+  window.setInterval(revisarReuniones, 30_000);
+  window.setInterval(cargarCalendario, 10 * 60_000);
+  window.setInterval(cargarTareas, 5 * 60_000);
+  window.setInterval(revisarInactividad, 15_000);
 }
 
 iniciar();

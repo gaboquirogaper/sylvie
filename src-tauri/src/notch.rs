@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
 /// Nombre interno (label) de la ventana del notch en tauri.conf.json.
 pub const ETIQUETA: &str = "notch";
 
-// La ventana es grande (520×220) y casi toda transparente. Para no bloquear
+// La ventana es grande (760×360) y casi toda transparente. Para no bloquear
 // lo que hay debajo, ignora el mouse salvo dentro de la "zona interactiva"
 // (el rectángulo que ocupa la píldora según su estado). La interfaz le dice
 // a Rust cuál es esa zona, y Rust vigila el cursor.
@@ -41,7 +41,7 @@ impl Compartido {
     pub fn nuevo() -> Self {
         Compartido(Mutex::new(EstadoCursor {
             // Zona inicial = estado "escondida" (se corrige apenas carga la interfaz).
-            zona: Zona { x: 160.0, y: 0.0, ancho: 200.0, alto: 34.0 },
+            zona: Zona { x: 228.0, y: 0.0, ancho: 304.0, alto: 34.0 },
             ultimo: None,
         }))
     }

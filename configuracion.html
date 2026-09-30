@@ -4,77 +4,159 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/src/configuracion.css" />
-    <title>Configuración de Sylvie</title>
+    <title>Ajustes de Sylvie</title>
     <script type="module" src="/src/configuracion.ts" defer></script>
   </head>
   <body>
+    <!-- ── Barra lateral ─────────────────────────────────────── -->
+    <nav class="lateral">
+      <div class="marca">
+        <canvas id="mascota" class="m32"></canvas>
+        <div>
+          <b>Sylvie</b>
+          <small>Ajustes</small>
+        </div>
+      </div>
+      <button class="item" type="button" data-seccion="general">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"></path></svg>
+        <span>General</span>
+      </button>
+      <button class="item" type="button" data-seccion="conexiones">
+        <svg viewBox="0 0 24 24"><path d="M9 15l6-6"></path><path d="M11 6l1.5-1.5a4.2 4.2 0 0 1 6 6L17 12"></path><path d="M13 18l-1.5 1.5a4.2 4.2 0 0 1-6-6L7 12"></path></svg>
+        <span>Conexiones</span><em id="resumen-conexiones"></em>
+      </button>
+      <button class="item" type="button" data-seccion="notion">
+        <svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2.5"></rect><path d="M9 16V8l6 8V8"></path></svg>
+        <span>Notion</span><em id="resumen-notion"></em>
+      </button>
+      <button class="item" type="button" data-seccion="claude">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v11H10l-6 4z"></path></svg>
+        <span>Claude</span><em id="resumen-claude"></em>
+      </button>
+      <p class="privacidad">
+        Sin telemetría. Tus tokens viven en el Llavero de tu Mac, nunca en archivos.
+      </p>
+    </nav>
+
     <main>
-      <h1>Configuración</h1>
+      <!-- ── General ─────────────────────────────────────────── -->
+      <section id="s-general" class="seccion" hidden>
+        <header>
+          <h1>General</h1>
+          <p>Cómo se comporta Sylvie en tu Mac.</p>
+        </header>
 
-      <section class="tarjeta">
-        <h2>Notion</h2>
-        <p class="ayuda">
-          Sylvie usa el token de una integración interna de Notion para revisar tus bases de datos.
-          Se guarda en el Llavero de macOS, nunca en un archivo.
-        </p>
-
-        <div id="con-token" hidden>
-          <p class="ok">✓ Token guardado en el Llavero</p>
-          <div class="fila">
-            <button id="probar" type="button">Probar conexión</button>
-            <button id="cambiar" type="button" class="secundario">Cambiar</button>
-            <button id="borrar" type="button" class="peligro">Borrar</button>
+        <div class="grupo">
+          <div class="fila-ajuste">
+            <div>
+              <b>Abrir Sylvie al iniciar sesión</b>
+              <small>Aparece sola en el notch cuando prendes la Mac.</small>
+            </div>
+            <label class="interruptor"><input id="inicio-automatico" type="checkbox" /><span></span></label>
+          </div>
+          <div class="fila-ajuste">
+            <div>
+              <b>Revisar Notion cada</b>
+              <small>Cada cuánto busca cambios en tus bases.</small>
+            </div>
+            <div class="control">
+              <input id="intervalo" type="number" min="1" max="120" step="1" />
+              <span class="tenue">min</span>
+              <button id="revisar-ahora" type="button" class="boton sec">Revisar ahora</button>
+            </div>
           </div>
         </div>
+        <p id="mensaje-general" class="mensaje" role="status"></p>
 
-        <form id="form-token" hidden>
-          <label for="token">Token de integración</label>
-          <input id="token" type="password" placeholder="ntn_…" autocomplete="off" spellcheck="false" />
-          <div class="fila">
-            <button type="submit">Verificar y guardar</button>
-            <button id="cancelar" type="button" class="secundario" hidden>Cancelar</button>
-          </div>
-        </form>
-
-        <p id="mensaje-notion" class="mensaje" role="status"></p>
+        <div class="nota">
+          <b>Con quién habla Sylvie</b>
+          Solo con las apps que conectas aquí, con Claude Code en tu Mac (usa tu plan, no la API)
+          y con Spotify / Apple Music para mostrar las portadas. Nada más.
+        </div>
       </section>
 
-      <section class="tarjeta">
-        <h2>Bases de datos a vigilar</h2>
-        <p class="ayuda">
-          Solo aparecen las bases que compartiste con tu integración en Notion
-          (en cada base: ⋯ → Conexiones → tu integración).
-        </p>
-        <div class="fila">
-          <button id="buscar-bases" type="button" class="secundario">Buscar bases</button>
+      <!-- ── Conexiones ──────────────────────────────────────── -->
+      <section id="s-conexiones" class="seccion" hidden>
+        <header>
+          <h1>Conexiones</h1>
+          <p>Lo que conectes aparece en el notch (Inicio → Calendario / Tareas). Sylvie solo lee: nunca cambia nada en esas apps.</p>
+        </header>
+        <div id="lista-apps" class="apps"></div>
+      </section>
+
+      <!-- ── Notion ──────────────────────────────────────────── -->
+      <section id="s-notion" class="seccion" hidden>
+        <header>
+          <h1>Notion</h1>
+          <p>Sylvie revisa tus bases de datos y te avisa en el notch cuando algo cambia.</p>
+        </header>
+
+        <div class="grupo">
+          <div class="fila-ajuste">
+            <div>
+              <b>Token de integración</b>
+              <small id="estado-notion">Sin conectar</small>
+            </div>
+            <div id="con-token" class="control" hidden>
+              <button id="probar" type="button" class="boton sec">Probar</button>
+              <button id="cambiar" type="button" class="boton sec">Cambiar</button>
+              <button id="borrar" type="button" class="boton peligro">Desconectar</button>
+            </div>
+          </div>
+
+          <form id="form-token" class="pasos-form" hidden>
+            <ol class="pasos">
+              <li>Abre tus integraciones de Notion y crea una <b>nueva integración interna</b> llamada «Sylvie» con permiso <b>Leer contenido</b>.
+                <button type="button" class="enlace" data-url="https://www.notion.so/profile/integrations">Abrir integraciones de Notion ↗</button></li>
+              <li>Copia el <b>Token de integración secreto</b> y pégalo aquí:</li>
+            </ol>
+            <div class="campo-fila">
+              <input id="token" type="password" placeholder="ntn_…" autocomplete="off" spellcheck="false" />
+              <button type="submit" class="boton">Verificar y guardar</button>
+              <button id="cancelar" type="button" class="boton sec" hidden>Cancelar</button>
+            </div>
+          </form>
         </div>
-        <ul id="lista-bases" class="lista-bases"></ul>
+        <p id="mensaje-notion" class="mensaje" role="status"></p>
+
+        <div class="grupo">
+          <div class="fila-ajuste">
+            <div>
+              <b>Bases que Sylvie vigila</b>
+              <small>Solo aparecen las que compartiste con la integración: en cada base, ⋯ → Conexiones → Sylvie.</small>
+            </div>
+            <button id="buscar-bases" type="button" class="boton sec">Buscar bases</button>
+          </div>
+          <ul id="lista-bases" class="lista-casillas"></ul>
+        </div>
         <p id="mensaje-bases" class="mensaje" role="status"></p>
       </section>
 
-      <section class="tarjeta">
-        <h2>Avisos</h2>
-        <label for="intervalo">Revisar Notion cada</label>
-        <div class="fila">
-          <input id="intervalo" type="number" min="1" max="120" step="1" />
-          <span>minutos</span>
-          <button id="revisar-ahora" type="button" class="secundario">Revisar ahora</button>
+      <!-- ── Claude ──────────────────────────────────────────── -->
+      <section id="s-claude" class="seccion" hidden>
+        <header>
+          <h1>Claude</h1>
+          <p>Cuando le pides algo a Sylvie, Claude Code solo puede usar las apps que actives aquí. Son los conectores de tu cuenta de Claude.</p>
+        </header>
+
+        <div class="grupo">
+          <div class="fila-ajuste">
+            <div>
+              <b>Apps que Claude puede usar</b>
+              <small id="estado-conectores">Pulsa «Buscar» para ver tus conectores (tarda unos segundos).</small>
+            </div>
+            <button id="buscar-conectores" type="button" class="boton sec">Buscar</button>
+          </div>
+          <ul id="lista-conectores" class="lista-casillas"></ul>
         </div>
-        <p id="mensaje-intervalo" class="mensaje" role="status"></p>
-      </section>
+        <p id="mensaje-claude" class="mensaje" role="status"></p>
 
-      <section class="tarjeta">
-        <h2>General</h2>
-        <label class="casilla">
-          <input id="inicio-automatico" type="checkbox" />
-          <span>Abrir Sylvie al iniciar sesión</span>
-        </label>
-        <p id="mensaje-general" class="mensaje" role="status"></p>
+        <div class="nota">
+          <b>¿Falta una app?</b>
+          Agrégala como conector en claude.ai (Configuración → Conectores) y vuelve a pulsar «Buscar».
+          <button type="button" class="enlace" data-url="https://claude.ai/settings/connectors">Abrir conectores de Claude ↗</button>
+        </div>
       </section>
-
-      <p class="privacidad">
-        Sin telemetría: Sylvie solo habla con Notion y con Claude Code en tu Mac.
-      </p>
     </main>
   </body>
 </html>

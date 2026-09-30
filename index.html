@@ -7,82 +7,226 @@
     <title>Sylvie</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
-  <body data-estado="escondida">
+  <body data-modo="compacta">
     <div id="notch">
-      <div id="zona-soltar">Suelta aquí para agregar a la bandeja</div>
-      <header class="cabecera">
-        <div class="lado izquierdo">
-          <canvas id="mascota" aria-label="Sylvie"></canvas>
-        </div>
-        <div class="hueco"></div>
-        <div class="lado derecho">
-          <span id="estado">hola</span>
-        </div>
-      </header>
+      <div class="oreja izq"></div>
+      <div class="oreja der"></div>
+      <div class="recorte">
 
-      <section class="panel">
-        <div id="musica" class="musica" hidden>
-          <span class="nota">♪</span>
-          <div class="musica-texto">
-            <div id="musica-titulo" class="aviso-titulo"></div>
-            <div id="musica-artista" class="aviso-detalle"></div>
+        <!-- COMPACTA / ASOMADA: Sylvie + 4 caritas-botón (nunca se cierra del todo).
+             Clic en Sylvie o en el fondo = abrir el panel. Clic en una carita = su acción. -->
+        <div id="capa-compacta" class="capa compacta">
+          <button id="abrir-compacta" class="nb" type="button" aria-label="Abrir Sylvie"><canvas id="m-compacta" class="m32"></canvas></button>
+          <span class="caritas">
+            <button class="carita" type="button" data-id="notion" title="Abrir Notion" aria-label="Abrir Notion"></button>
+            <button class="carita" type="button" data-id="claude" title="Pedirle algo a Claude" aria-label="Pedirle algo a Claude"></button>
+            <button class="carita" type="button" data-id="musica" title="Abrir Spotify o Música" aria-label="Abrir Spotify o Música"></button>
+            <button class="carita" type="button" data-id="bandeja" title="Abrir la bandeja de archivos" aria-label="Abrir la bandeja de archivos"></button>
+          </span>
+        </div>
+
+        <!-- AVISO EN VIVO (Notion, pedido terminado) -->
+        <button id="capa-toast" class="capa toast" type="button" aria-label="Ver en Sylvie" hidden>
+          <span class="cara64"><canvas id="m-toast" class="m64"></canvas></span>
+          <span class="t-col">
+            <span id="toast-titulo" class="t-titulo"></span>
+            <span id="toast-cuerpo" class="t-cuerpo"></span>
+          </span>
+          <span id="toast-accion" class="t-accion"></span>
+        </button>
+
+        <!-- CANCIÓN NUEVA, con controles -->
+        <div id="capa-cancion" class="capa cancion" hidden>
+          <div class="fila-cancion">
+          <button id="cancion-portada" class="portada p56" type="button" aria-label="Abrir la música en Sylvie">
+            <span class="arte"></span>
+            <img id="cancion-img" alt="" hidden />
+            <span id="cancion-insignia" class="insignia"></span>
+          </button>
+          <span class="t-col">
+            <span id="cancion-titulo" class="t-titulo"></span>
+            <span id="cancion-artista" class="t-artista"></span>
+          </span>
+          <span class="controles" data-grupo="cancion"></span>
           </div>
-          <div class="musica-controles">
-            <button data-accion="anterior" type="button" title="Anterior">⏮</button>
-            <button id="musica-alternar" data-accion="alternar" type="button" title="Reproducir / pausar">⏸</button>
-            <button data-accion="siguiente" type="button" title="Siguiente">⏭</button>
-          </div>
-        </div>
-
-        <div class="fila-titulo">
-          <nav class="pestanas">
-            <button class="pestana activa" data-vista="avisos" type="button">Avisos</button>
-            <button class="pestana" data-vista="historial" type="button">Historial</button>
-            <button class="pestana" data-vista="bandeja" type="button">Bandeja</button>
-          </nav>
-          <button id="abrir-configuracion" type="button">Configuración</button>
-        </div>
-
-        <div id="vista-avisos" class="vista">
-          <ul id="lista-avisos" class="lista"></ul>
-          <p id="sin-avisos" class="vacio">Aquí aparecerán tus avisos de Notion.</p>
-        </div>
-
-        <div id="vista-historial" class="vista" hidden>
-          <ul id="lista-historial" class="lista"></ul>
-          <p id="sin-historial" class="vacio">Todavía no le pediste nada a Sylvie.</p>
-        </div>
-
-        <div id="vista-bandeja" class="vista" hidden>
-          <ul id="lista-bandeja" class="lista"></ul>
-          <p id="sin-bandeja" class="vacio">Arrastra archivos al notch para dejarlos aquí y enviarlos por AirDrop.</p>
-          <div id="acciones-bandeja" class="acciones" hidden>
-            <button id="vaciar-bandeja" type="button">Vaciar</button>
-            <button id="enviar-airdrop" type="button">Enviar por AirDrop</button>
-          </div>
-          <p id="mensaje-bandeja" class="aviso-detalle"></p>
-        </div>
-
-        <div id="vista-pedido" class="vista" hidden>
-          <p id="pedido-texto" class="pedido-texto"></p>
-          <ol id="pasos" class="pasos"></ol>
-          <p id="pedido-resultado" class="pedido-resultado" hidden></p>
-          <div class="acciones">
-            <button id="cancelar-pedido" type="button">Cancelar</button>
-            <button id="listo-pedido" type="button" hidden>Listo</button>
+          <div class="progreso en-linea">
+            <span id="cancion-actual" class="t-mini">0:00</span>
+            <input id="cancion-barra" class="barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición de la canción" />
+            <span id="cancion-total" class="t-mini">0:00</span>
           </div>
         </div>
 
-        <form id="form-pedido">
-          <input
-            id="pedido"
-            type="text"
-            placeholder="Pídele algo a Sylvie… (Enter para enviar)"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </form>
-      </section>
+        <!-- ARRASTRAR UN ARCHIVO CON EL NOTCH CERRADO: Sylvie se lo "come" -->
+        <div id="capa-comer" class="capa comer" hidden>
+          <canvas id="m-comer" class="m64"></canvas>
+          <span id="volador" class="volador">PDF</span>
+          <span class="t-col">
+            <span id="comer-titulo" class="t-titulo grande">¡Dámelo!</span>
+            <span id="comer-cuerpo" class="t-cuerpo">Suéltalo y lo guardo en la bandeja.</span>
+          </span>
+        </div>
+
+        <!-- ATURDIDA (tres toques) -->
+        <div id="capa-aturdida" class="capa aturdida" hidden>
+          <div class="brillo b1"></div>
+          <div class="brillo b2"></div>
+          <div class="brillo b3"></div>
+          <div class="aturdida-fila">
+            <span class="cara64 tambalea"><canvas id="m-aturdida" class="m64"></canvas></span>
+            <span class="t-col">
+              <span class="t-titulo grande">¡Uy, demasiados toques!</span>
+              <span class="t-cuerpo claro">Me mareé un poquito. Vuelvo al trabajo en un segundo.</span>
+            </span>
+            <span id="cuenta" class="cuenta">3</span>
+          </div>
+        </div>
+
+        <!-- PANEL -->
+        <div id="capa-panel" class="capa panel" hidden>
+          <div class="barra-sup">
+            <div class="grupo izq">
+              <button id="m-panel-btn" class="nb mascota-btn" type="button" aria-label="Sylvie (prueba darle tres toques)"><canvas id="m-panel" class="m32"></canvas></button>
+              <button class="pastilla" type="button" data-pestana="inicio">
+                <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg><span>Inicio</span>
+              </button>
+              <button class="pastilla" type="button" data-pestana="claude">
+                <svg viewBox="0 0 24 24"><path d="M4 5h16v11H10l-6 4z"></path></svg><span>Claude</span>
+              </button>
+              <button class="pastilla" type="button" data-pestana="bandeja">
+                <svg viewBox="0 0 24 24"><path d="M3 13l3-8h12l3 8v6H3z"></path><path d="M3 13h5l1.5 2h5L16 13h5"></path></svg><span>Bandeja</span><b id="contador-bandeja" class="contador" hidden></b>
+              </button>
+            </div>
+            <div class="hueco-notch" aria-hidden="true"></div>
+            <div class="grupo der">
+              <button class="pastilla" type="button" data-pestana="conexiones">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"></path></svg><span>Conexiones</span>
+              </button>
+              <button id="cerrar" class="pastilla icono" type="button" aria-label="Cerrar">
+                <svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bienvenida: al iniciar y al desbloquear la Mac -->
+          <section id="v-bienvenida" class="vista bienvenida" hidden>
+            <div class="halo"></div>
+            <canvas id="m-grande" class="m96"></canvas>
+            <span class="t-titulo grande">Hola, soy Sylvie</span>
+            <span class="t-cuerpo">Todo listo. Pasa el mouse por el notch cuando me necesites.</span>
+          </section>
+
+          <!-- Inicio: música + Notion / Calendario -->
+          <section id="v-inicio" class="vista inicio" hidden>
+            <div class="tarjeta musica">
+              <div class="portada p112">
+                <span class="arte"></span>
+                <img id="inicio-img" alt="" hidden />
+                <span id="inicio-insignia" class="insignia"></span>
+              </div>
+              <div class="musica-col">
+                <span id="inicio-titulo" class="t-titulo">Nada sonando</span>
+                <span id="inicio-artista" class="t-artista">Abre Spotify o Música</span>
+                <div class="progreso">
+                  <input id="inicio-barra" class="barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición de la canción" />
+                  <div class="tiempos"><span id="inicio-actual">0:00</span><span id="inicio-total">0:00</span></div>
+                </div>
+                <span class="controles" data-grupo="inicio"></span>
+              </div>
+            </div>
+            <div class="tarjeta derecha">
+              <div class="seg-fila">
+                <div class="segmentos">
+                  <button type="button" data-seg="notion">Notion</button>
+                  <button type="button" data-seg="calendario">Calendario</button>
+                  <button type="button" data-seg="tareas">Tareas</button>
+                </div>
+                <span id="resumen-derecha" class="t-mini"></span>
+              </div>
+              <div id="seg-notion">
+                <ul id="lista-avisos" class="lista"></ul>
+                <p id="sin-avisos" class="vacio">Aquí aparecerán tus avisos de Notion.</p>
+              </div>
+              <div id="seg-calendario" class="seg-col" hidden>
+                <div id="semana" class="semana"></div>
+                <ul id="lista-eventos" class="lista eventos"></ul>
+                <p id="sin-eventos" class="vacio"></p>
+              </div>
+              <div id="seg-tareas" class="seg-col" hidden>
+                <ul id="lista-tareas" class="lista"></ul>
+                <p id="sin-tareas" class="vacio"></p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Claude: pasos en vivo -->
+          <section id="v-claude" class="vista claude" hidden>
+            <div class="tarjeta lado">
+              <div class="quien">
+                <canvas id="m-claude" class="m64"></canvas>
+                <span class="t-col">
+                  <span class="t-titulo">Sylvie</span>
+                  <span class="t-mini">vía Claude Code</span>
+                </span>
+              </div>
+              <ol id="pasos" class="pasos"></ol>
+            </div>
+            <div class="tarjeta chat">
+              <div id="conversacion" class="conversacion">
+                <div id="pedido-burbuja" class="burbuja" hidden></div>
+                <div id="comentario" class="comentario" hidden></div>
+                <div id="resultado" class="resultado" hidden></div>
+                <div id="bienvenida-chat">
+                  <p class="vacio">Pídele algo a Sylvie: crear una tarjeta, buscar una página, resumir una base de datos…</p>
+                  <ul id="historial" class="historial"></ul>
+                </div>
+              </div>
+              <form id="form-pedido" class="entrada">
+                <label class="sr" for="pedido">Pedido para Sylvie</label>
+                <textarea id="pedido" rows="2" placeholder="Pídele algo a Sylvie… (Enter para enviar, Mayús+Enter para otra línea)"></textarea>
+                <button id="cancelar-pedido" class="boton-sec" type="button" hidden>Cancelar</button>
+                <button id="enviar-pedido" class="boton-envio" type="submit" aria-label="Enviar pedido">
+                  <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                </button>
+              </form>
+            </div>
+          </section>
+
+          <!-- Bandeja: AirDrop + archivos -->
+          <section id="v-bandeja" class="vista bandeja" hidden>
+            <button id="enviar-airdrop" class="tarjeta airdrop" type="button" aria-label="Enviar por AirDrop">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="1.6"></circle><path d="M8.8 16.2a4.5 4.5 0 1 1 6.4 0"></path><path d="M6 19a8.5 8.5 0 1 1 12 0"></path></svg>
+              <span class="t-titulo">AirDrop</span>
+              <span id="texto-airdrop" class="t-mini">Sin archivos</span>
+            </button>
+            <div id="zona" class="zona">
+              <div id="zona-comer" class="zona-comer" hidden>
+                <canvas id="m-zona" class="m64"></canvas>
+                <span id="volador-zona" class="volador">PDF</span>
+                <span class="t-col">
+                  <span id="zona-titulo" class="t-titulo grande">¡Dámelo!</span>
+                  <span id="zona-cuerpo" class="t-cuerpo">Suéltalo aquí.</span>
+                </span>
+              </div>
+              <p id="sin-bandeja" class="vacio centro">Arrastra archivos al notch para dejarlos aquí<br />y enviarlos por AirDrop.</p>
+              <div id="lista-bandeja" class="archivos"></div>
+              <div id="acciones-bandeja" class="fila-der" hidden>
+                <span id="mensaje-bandeja" class="t-mini"></span>
+                <button id="vaciar-bandeja" class="boton-sec" type="button">Vaciar</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Conexiones -->
+          <section id="v-conexiones" class="vista conexiones" hidden>
+            <div class="fila-titulo">
+              <span class="t-titulo">Conexiones</span>
+              <span class="t-mini">Lo conectado aparece en Inicio. Lo que Claude puede usar se elige en Ajustes → Claude.</span>
+              <button id="abrir-ajustes" class="boton-sec" type="button">Abrir Ajustes</button>
+            </div>
+            <div id="apps" class="apps"></div>
+          </section>
+        </div>
+      </div>
     </div>
   </body>
 </html>

@@ -1,4 +1,5 @@
-//! Chat con Claude Code: ejecuta `claude -p` en modo no interactivo, limitado a Notion,
+//! Chat con Claude Code: ejecuta `claude -p` en modo no interactivo, limitado a los
+//! conectores que elegiste en Ajustes → Claude (por defecto, solo Notion),
 //! y traduce su progreso (stream-json) a pasos en lenguaje simple.
 //!
 //! Usa tu sesión de Claude Code (plan Pro). No usa la API de Anthropic.
@@ -23,8 +24,7 @@ use tokio::{
 
 use crate::configuracion;
 
-/// Solo se autorizan las herramientas del conector de Notion (verificado en la fase 0).
-const HERRAMIENTAS_PERMITIDAS: &str = "mcp__claude_ai_Notion";
+/// Las herramientas autorizadas salen de Ajustes → Claude (configuracion::Ajustes::claude_apps).
 const PREFIJO_NOTION: &str = "mcp__claude_ai_Notion__";
 /// Si un pedido tarda más que esto, se detiene.
 const LIMITE: Duration = Duration::from_secs(5 * 60);
@@ -63,7 +63,7 @@ pub struct Entrada {
 // ── Utilidades ──────────────────────────────────────────────────
 
 /// Dónde está Claude Code: ~/.local/bin/claude (Mac) o claude.exe (Windows); si no, el PATH.
-fn ruta_claude() -> PathBuf {
+pub fn ruta_claude() -> PathBuf {
     let casa = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from);
@@ -78,14 +78,23 @@ fn ruta_claude() -> PathBuf {
     PathBuf::from("claude")
 }
 
+/// Nombre legible de un conector: "mcp__claude_ai_Google_Calendar" → "Google Calendar".
+pub fn nombre_conector(prefijo: &str) -> String {
+    let corto = prefijo.trim_start_matches("mcp__");
+    let corto = corto.strip_prefix("claude_ai_").unwrap_or(corto);
+    corto.replace('_', " ")
+}
+
 /// Envuelve el pedido con instrucciones y la fecha de hoy (para entender "el viernes").
-fn preparar_pedido(texto: &str) -> String {
+fn preparar_pedido(texto: &str, apps: &[String]) -> String {
     let ahora = Local::now();
+    let nombres: Vec<String> = apps.iter().map(|p| nombre_conector(p)).collect();
     format!(
-        "Eres Sylvie, una asistente que trabaja en el Notion del usuario. \
-Reglas: usa solo las herramientas de Notion; responde en español, en una o dos frases, \
+        "Eres Sylvie, una asistente que trabaja con las apps del usuario ({}). \
+Reglas: usa solo las herramientas de esas apps; responde en español, en una o dos frases, \
 sin tablas ni encabezados; si falta información importante o algo es ambiguo, dilo en vez de inventar. \
 Fecha y hora actual: {} ({}).\n\nPedido: {}",
+        nombres.join(", "),
         ahora.format("%Y-%m-%d %H:%M %:z"),
         ahora.format("%A"),
         texto.trim()
@@ -95,8 +104,16 @@ Fecha y hora actual: {} ({}).\n\nPedido: {}",
 /// Traduce el nombre técnico de la herramienta a una frase simple.
 fn describir_herramienta(nombre: &str, entrada: &Value) -> String {
     let Some(corto) = nombre.strip_prefix(PREFIJO_NOTION) else {
+        // Otros conectores: "mcp__<servidor>__<herramienta>" → "Usando Gmail (search threads)…"
+        if let Some(resto) = nombre.strip_prefix("mcp__") {
+            if let Some((servidor, herramienta)) = resto.split_once("__") {
+                let app = nombre_conector(&format!("mcp__{servidor}"));
+                let accion = herramienta.replace(['_', '-'], " ");
+                return format!("Usando {app} ({accion})…");
+            }
+        }
         return match nombre {
-            "ToolSearch" => "Preparando las herramientas de Notion…".into(),
+            "ToolSearch" => "Preparando las herramientas…".into(),
             _ => "Pensando…".into(),
         };
     };
@@ -161,7 +178,7 @@ fn interpretar(app: &AppHandle, linea: &str, ultimo_texto: &mut String) -> Optio
     let v: Value = serde_json::from_str(linea).ok()?;
     match v["type"].as_str()? {
         "system" if v["subtype"] == "init" => {
-            progreso(app, "paso", "Conectando con Notion…");
+            progreso(app, "paso", "Conectando con tus apps…");
             None
         }
         "assistant" => {
@@ -219,7 +236,7 @@ fn interpretar(app: &AppHandle, linea: &str, ultimo_texto: &mut String) -> Optio
                 Some(Err(explicacion))
             } else if !denegados.is_empty() {
                 Some(Ok(format!(
-                    "{texto}\n(Claude quiso usar {} y Sylvie lo bloqueó: solo permite Notion.)",
+                    "{texto}\n(Claude quiso usar {} y Sylvie lo bloqueó: actívalo en Ajustes → Claude si quieres permitirlo.)",
                     denegados.join(", ")
                 )))
             } else {
@@ -237,18 +254,19 @@ async fn ejecutar(app: &AppHandle, texto: &str) -> Result<String, String> {
     let carpeta = configuracion::ruta(app, "espacio-claude")?;
     fs::create_dir_all(&carpeta).map_err(|e| format!("No pude preparar la carpeta de trabajo: {e}"))?;
 
+    let apps = configuracion::leer(app).claude_apps;
+    if apps.is_empty() {
+        return Err("Claude no tiene permiso para usar ninguna app. Actívalas en Ajustes → Claude.".into());
+    }
+
     progreso(app, "paso", "Despertando a Claude Code…");
 
+    // --allowedTools recibe una lista: cada conector va como un valor aparte (al final del comando).
     let mut hijo = Command::new(ruta_claude())
         .arg("-p")
-        .arg(preparar_pedido(texto))
-        .args([
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--allowedTools",
-            HERRAMIENTAS_PERMITIDAS,
-        ])
+        .arg(preparar_pedido(texto, &apps))
+        .args(["--output-format", "stream-json", "--verbose", "--allowedTools"])
+        .args(&apps)
         .current_dir(&carpeta)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

@@ -10,19 +10,22 @@
 //! - claude         → chat con Claude Code (modo no interactivo, solo Notion) e historial
 //! - musica         → lo que suena en Spotify / Apple Music y sus controles
 //! - archivos       → bandeja de archivos del notch y AirDrop
-//!
-//! Más adelante: fuentes futuras (calendario, hooks, otras apps…),
-//! cada una en su propio módulo.
+//! - sistema        → inactividad (para dormir) y desbloqueo de pantalla (para saludar)
+//! - calendario     → lee Google Calendar desde su dirección secreta iCal
+//! - integraciones  → conectar Calendar / ClickUp / Asana, conectores de Claude, abrir apps
 
 mod archivos;
 mod avisos;
 mod bandeja;
+mod calendario;
 mod claude;
 mod configuracion;
+mod integraciones;
 mod musica;
 mod notch;
 mod notion;
 mod secretos;
+mod sistema;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -36,10 +39,13 @@ pub fn run() {
         .manage(notch::Compartido::nuevo())
         .manage(avisos::EstadoAvisos::default())
         .manage(claude::EstadoClaude::default())
+        .manage(musica::EstadoMusica::default())
+        .manage(configuracion::SeccionPendiente::default())
         .invoke_handler(tauri::generate_handler![
             notch::fijar_zona,
             notch::enfocar,
             configuracion::abrir_configuracion,
+            configuracion::tomar_seccion,
             configuracion::hay_token,
             configuracion::guardar_token,
             configuracion::probar_conexion,
@@ -58,8 +64,21 @@ pub fn run() {
             claude::historial,
             musica::musica_actual,
             musica::controlar_musica,
+            musica::mover_musica,
+            musica::favorito_musica,
+            musica::portada_musica,
             archivos::enviar_por_airdrop,
             archivos::mostrar_en_finder,
+            sistema::segundos_inactivo,
+            integraciones::estado_conexiones,
+            integraciones::conectar_app,
+            integraciones::desconectar_app,
+            integraciones::eventos_calendario,
+            integraciones::tareas_pendientes,
+            integraciones::conectores_claude,
+            integraciones::permitir_conector,
+            integraciones::abrir_enlace,
+            integraciones::abrir_app,
         ])
         .setup(|app| {
             // En Mac: sin ícono en el Dock; Sylvie vive en la barra de menú.
@@ -70,6 +89,7 @@ pub fn run() {
             notch::iniciar(app.handle())?;
             avisos::iniciar(app.handle().clone());
             musica::iniciar(app.handle().clone());
+            sistema::escuchar_desbloqueo(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

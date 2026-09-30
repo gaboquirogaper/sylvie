@@ -4,7 +4,7 @@
 //!   (~/Library/Application Support/com.gabo.sylvie/ en Mac).
 //! - Token de Notion → Llavero (ver secretos.rs). Nunca en el JSON.
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -21,6 +21,8 @@ pub struct Ajustes {
     pub intervalo_minutos: u32,
     /// Bases de datos de Notion que Sylvie vigila.
     pub bases: Vec<notion::BaseDatos>,
+    /// Conectores de Claude que Sylvie deja usar en los pedidos (prefijos "mcp__…").
+    pub claude_apps: Vec<String>,
 }
 
 impl Default for Ajustes {
@@ -28,9 +30,16 @@ impl Default for Ajustes {
         Ajustes {
             intervalo_minutos: 5,
             bases: Vec::new(),
+            claude_apps: vec!["mcp__claude_ai_Notion".into()],
         }
     }
 }
+
+/// Sección que la ventana de Configuración debe mostrar al abrirse.
+#[derive(Default)]
+pub struct SeccionPendiente(pub Mutex<Option<String>>);
+
+const SECCIONES: [&str; 4] = ["general", "conexiones", "notion", "claude"];
 
 /// Ruta de un archivo dentro de la carpeta de datos de Sylvie (la crea si no existe).
 pub fn ruta(app: &AppHandle, archivo: &str) -> Result<PathBuf, String> {
@@ -51,7 +60,7 @@ pub fn leer(app: &AppHandle) -> Ajustes {
         .unwrap_or_default()
 }
 
-fn guardar(app: &AppHandle, ajustes: &Ajustes) -> Result<(), String> {
+pub fn guardar(app: &AppHandle, ajustes: &Ajustes) -> Result<(), String> {
     let texto = serde_json::to_string_pretty(ajustes).map_err(|e| e.to_string())?;
     fs::write(ruta(app, ARCHIVO_AJUSTES)?, texto)
         .map_err(|e| format!("No pude guardar los ajustes: {e}"))
@@ -65,8 +74,9 @@ pub fn abrir_ventana(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     let ventana = WebviewWindowBuilder::new(app, ETIQUETA, WebviewUrl::App("configuracion.html".into()))
-        .title("Configuración de Sylvie")
-        .inner_size(480.0, 700.0)
+        .title("Ajustes de Sylvie")
+        .inner_size(780.0, 580.0)
+        .min_inner_size(640.0, 460.0)
         .resizable(true)
         .center()
         .build()?;
@@ -78,9 +88,26 @@ pub fn abrir_ventana(app: &AppHandle) -> tauri::Result<()> {
 
 /// Abre la Configuración desde el panel del notch.
 /// Es `async` a propósito: en Windows, crear ventanas desde un comando síncrono puede bloquear la app.
+/// `seccion` (opcional): "general", "conexiones", "notion" o "claude".
 #[tauri::command]
-pub async fn abrir_configuracion(app: AppHandle) -> Result<(), String> {
-    abrir_ventana(&app).map_err(|e| format!("No pude abrir la Configuración: {e}"))
+pub async fn abrir_configuracion(app: AppHandle, seccion: Option<String>) -> Result<(), String> {
+    let seccion = seccion.filter(|s| SECCIONES.contains(&s.as_str()));
+    if let Some(s) = &seccion {
+        if app.get_webview_window(ETIQUETA).is_some() {
+            let _ = app.emit_to(ETIQUETA, "ir-a-seccion", s.clone());
+        } else if let Ok(mut pendiente) = app.state::<SeccionPendiente>().0.lock() {
+            *pendiente = Some(s.clone());
+        }
+    }
+    abrir_ventana(&app).map_err(|e| format!("No pude abrir los Ajustes: {e}"))
+}
+
+/// La ventana de Configuración pregunta al arrancar qué sección mostrar.
+#[tauri::command]
+pub fn tomar_seccion(app: AppHandle) -> Option<String> {
+    let estado = app.state::<SeccionPendiente>();
+    let seccion = estado.0.lock().ok().and_then(|mut s| s.take());
+    seccion
 }
 
 /// ¿Hay un token guardado? (Nunca devuelve el token en sí.)
@@ -138,6 +165,11 @@ pub fn guardar_ajustes(app: AppHandle, ajustes: Ajustes) -> Result<Ajustes, Stri
     let ajustes = Ajustes {
         intervalo_minutos: ajustes.intervalo_minutos.clamp(1, 120),
         bases: ajustes.bases,
+        claude_apps: ajustes
+            .claude_apps
+            .into_iter()
+            .filter(|p| prefijo_valido(p))
+            .collect(),
     };
     guardar(&app, &ajustes)?;
     let _ = app.emit("ajustes-cambiados", ());
@@ -172,4 +204,12 @@ pub fn fijar_inicio_automatico(app: AppHandle, activo: bool) -> Result<bool, Str
 #[tauri::command]
 pub fn modo_desarrollo() -> bool {
     cfg!(debug_assertions)
+}
+
+/// Un prefijo de conector válido: "mcp__" + letras, números, "_" o "-".
+pub fn prefijo_valido(prefijo: &str) -> bool {
+    prefijo.len() > 5
+        && prefijo.len() < 80
+        && prefijo.starts_with("mcp__")
+        && prefijo.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }

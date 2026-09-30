@@ -9,6 +9,8 @@ Aquí viven las animaciones de la mascota. Hay **un PNG por estado**:
 | `feliz.png`      | Un pedido terminó bien (unos segundos)             |
 | `alerta.png`     | Hay avisos sin leer o un pedido falló              |
 | `aturdido.png`   | Le das 3 toques seguidos a la mascota (secreto)    |
+| `boca.png`       | Arrastras un archivo sobre el notch (lo espera)    |
+| `comer.png`      | Sueltas el archivo: se lo "come" a la bandeja      |
 
 ## Formato
 
@@ -28,3 +30,12 @@ Aquí viven las animaciones de la mascota. Hay **un PNG por estado**:
 
 La mascota provisional se genera con `python3 herramientas/mascota_provisional.py`
 (si la vuelves a ejecutar, **sobrescribe** estos PNG).
+
+### Animaciones extra (v0.3)
+
+| Archivo          | Cuándo se ve                                               |
+|------------------|------------------------------------------------------------|
+| `dormir.png`     | Llevas un rato sin usar la Mac: duerme y le salen zetas     |
+| `dj.png`         | Cambias de canción muy rápido: audífonos y discos volando  |
+| `pensando.png`   | Claude está trabajando en tu pedido                        |
+| `lupa.png`       | Estás mirando el calendario                                |

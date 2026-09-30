@@ -10,8 +10,16 @@ import urlTrabajando from "./assets/sylvie/trabajando.png";
 import urlFeliz from "./assets/sylvie/feliz.png";
 import urlAlerta from "./assets/sylvie/alerta.png";
 import urlAturdido from "./assets/sylvie/aturdido.png";
+import urlBoca from "./assets/sylvie/boca.png";
+import urlComer from "./assets/sylvie/comer.png";
+import urlDormir from "./assets/sylvie/dormir.png";
+import urlDj from "./assets/sylvie/dj.png";
+import urlPensando from "./assets/sylvie/pensando.png";
+import urlLupa from "./assets/sylvie/lupa.png";
 
-export type EstadoMascota = "reposo" | "trabajando" | "feliz" | "alerta" | "aturdido";
+export type EstadoMascota =
+  | "reposo" | "trabajando" | "feliz" | "alerta" | "aturdido"
+  | "boca" | "comer" | "dormir" | "dj" | "pensando" | "lupa";
 
 const TAM_CUADRO = 32;
 
@@ -21,6 +29,12 @@ const ANIMACIONES: Record<EstadoMascota, { url: string; fps: number; repetir: bo
   feliz: { url: urlFeliz, fps: 10, repetir: true },
   alerta: { url: urlAlerta, fps: 6, repetir: true },
   aturdido: { url: urlAturdido, fps: 8, repetir: true },
+  boca: { url: urlBoca, fps: 7, repetir: true },
+  comer: { url: urlComer, fps: 7, repetir: false },
+  dormir: { url: urlDormir, fps: 2, repetir: true },
+  dj: { url: urlDj, fps: 9, repetir: true },
+  pensando: { url: urlPensando, fps: 4, repetir: true },
+  lupa: { url: urlLupa, fps: 5, repetir: true },
 };
 
 export class Mascota {
