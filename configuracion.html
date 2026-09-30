@@ -40,13 +40,26 @@
       </section>
 
       <section class="tarjeta">
+        <h2>Bases de datos a vigilar</h2>
+        <p class="ayuda">
+          Solo aparecen las bases que compartiste con tu integración en Notion
+          (en cada base: ⋯ → Conexiones → tu integración).
+        </p>
+        <div class="fila">
+          <button id="buscar-bases" type="button" class="secundario">Buscar bases</button>
+        </div>
+        <ul id="lista-bases" class="lista-bases"></ul>
+        <p id="mensaje-bases" class="mensaje" role="status"></p>
+      </section>
+
+      <section class="tarjeta">
         <h2>Avisos</h2>
         <label for="intervalo">Revisar Notion cada</label>
         <div class="fila">
           <input id="intervalo" type="number" min="1" max="120" step="1" />
           <span>minutos</span>
+          <button id="revisar-ahora" type="button" class="secundario">Revisar ahora</button>
         </div>
-        <p class="ayuda">Las bases de datos a vigilar se eligen aquí en la fase 4.</p>
         <p id="mensaje-intervalo" class="mensaje" role="status"></p>
       </section>
 

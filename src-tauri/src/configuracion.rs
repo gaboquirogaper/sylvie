@@ -1,7 +1,7 @@
 //! Ventana de Configuración, ajustes guardados en disco y comandos para la interfaz.
 //!
-//! - Ajustes normales (intervalo, y en la fase 4 las bases de datos) → archivo JSON
-//!   en la carpeta de datos de la app (~/Library/Application Support/com.gabo.sylvie/).
+//! - Ajustes normales (intervalo, bases vigiladas) → ajustes.json en la carpeta de la app
+//!   (~/Library/Application Support/com.gabo.sylvie/ en Mac).
 //! - Token de Notion → Llavero (ver secretos.rs). Nunca en el JSON.
 
 use std::{fs, path::PathBuf};
@@ -9,43 +9,52 @@ use std::{fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::{notion, secretos};
+use crate::{avisos::EstadoAvisos, notion, secretos};
 
 pub const ETIQUETA: &str = "configuracion";
+const ARCHIVO_AJUSTES: &str = "ajustes.json";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ajustes {
     /// Cada cuántos minutos revisar Notion (1 a 120).
     pub intervalo_minutos: u32,
+    /// Bases de datos de Notion que Sylvie vigila.
+    pub bases: Vec<notion::BaseDatos>,
 }
 
 impl Default for Ajustes {
     fn default() -> Self {
-        Ajustes { intervalo_minutos: 5 }
+        Ajustes {
+            intervalo_minutos: 5,
+            bases: Vec::new(),
+        }
     }
 }
 
-fn ruta_archivo(app: &AppHandle) -> Result<PathBuf, String> {
+/// Ruta de un archivo dentro de la carpeta de datos de Sylvie (la crea si no existe).
+pub fn ruta(app: &AppHandle, archivo: &str) -> Result<PathBuf, String> {
     let carpeta = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("No encontré la carpeta de configuración: {e}"))?;
-    fs::create_dir_all(&carpeta).map_err(|e| format!("No pude crear la carpeta de configuración: {e}"))?;
-    Ok(carpeta.join("ajustes.json"))
+    fs::create_dir_all(&carpeta)
+        .map_err(|e| format!("No pude crear la carpeta de configuración: {e}"))?;
+    Ok(carpeta.join(archivo))
 }
 
 pub fn leer(app: &AppHandle) -> Ajustes {
-    ruta_archivo(app)
+    ruta(app, ARCHIVO_AJUSTES)
         .ok()
-        .and_then(|ruta| fs::read_to_string(ruta).ok())
+        .and_then(|r| fs::read_to_string(r).ok())
         .and_then(|texto| serde_json::from_str(&texto).ok())
         .unwrap_or_default()
 }
 
 fn guardar(app: &AppHandle, ajustes: &Ajustes) -> Result<(), String> {
     let texto = serde_json::to_string_pretty(ajustes).map_err(|e| e.to_string())?;
-    fs::write(ruta_archivo(app)?, texto).map_err(|e| format!("No pude guardar los ajustes: {e}"))
+    fs::write(ruta(app, ARCHIVO_AJUSTES)?, texto)
+        .map_err(|e| format!("No pude guardar los ajustes: {e}"))
 }
 
 /// Abre la ventana de Configuración (o la trae al frente si ya está abierta).
@@ -57,8 +66,8 @@ pub fn abrir_ventana(app: &AppHandle) -> tauri::Result<()> {
     }
     let ventana = WebviewWindowBuilder::new(app, ETIQUETA, WebviewUrl::App("configuracion.html".into()))
         .title("Configuración de Sylvie")
-        .inner_size(460.0, 540.0)
-        .resizable(false)
+        .inner_size(480.0, 700.0)
+        .resizable(true)
         .center()
         .build()?;
     ventana.set_focus()?;
@@ -90,6 +99,7 @@ pub async fn guardar_token(app: AppHandle, token: String) -> Result<String, Stri
     let descripcion = notion::verificar_token(&token).await?;
     secretos::guardar_token_notion(&token)?;
     let _ = app.emit("ajustes-cambiados", ());
+    app.state::<EstadoAvisos>().revisar_ya();
     Ok(descripcion)
 }
 
@@ -109,6 +119,15 @@ pub fn borrar_token(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Bases de datos que la integración puede ver (las compartidas con ella en Notion).
+#[tauri::command]
+pub async fn listar_bases() -> Result<Vec<notion::BaseDatos>, String> {
+    let Some(token) = secretos::leer_token_notion()? else {
+        return Err("Primero guarda tu token de Notion.".into());
+    };
+    notion::listar_bases(&token).await
+}
+
 #[tauri::command]
 pub fn leer_ajustes(app: AppHandle) -> Ajustes {
     leer(&app)
@@ -118,8 +137,11 @@ pub fn leer_ajustes(app: AppHandle) -> Ajustes {
 pub fn guardar_ajustes(app: AppHandle, ajustes: Ajustes) -> Result<Ajustes, String> {
     let ajustes = Ajustes {
         intervalo_minutos: ajustes.intervalo_minutos.clamp(1, 120),
+        bases: ajustes.bases,
     };
     guardar(&app, &ajustes)?;
     let _ = app.emit("ajustes-cambiados", ());
+    // Revisar enseguida con la configuración nueva (y fijar el punto de partida de bases nuevas).
+    app.state::<EstadoAvisos>().revisar_ya();
     Ok(ajustes)
 }

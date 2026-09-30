@@ -53,7 +53,7 @@ body[data-estado="asomada"] #notch {
 
 body[data-estado="expandida"] #notch {
   width: 480px;
-  height: 200px;
+  height: 272px;
   border-radius: 0 0 22px 22px;
 }
 
@@ -96,6 +96,11 @@ body:not([data-estado="escondida"]) .lado {
   border-radius: 4px;
   background: var(--acento);
   image-rendering: pixelated;
+}
+
+/* Hay avisos sin leer (en la fase 6 será el estado "alerta" de la mascota) */
+#mascota.con-avisos {
+  background: #ffb454;
 }
 
 #estado {
@@ -147,9 +152,70 @@ body[data-estado="expandida"] .panel {
 }
 
 .vacio {
-  margin: 0 0 14px;
+  margin: 8px 0 14px;
   color: var(--tenue);
   font-size: 12px;
+}
+
+/* ── Lista de avisos ─────────────────────────────────────── */
+.lista-avisos {
+  max-height: 140px;
+  margin: 6px -8px 10px;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.lista-avisos:empty {
+  display: none;
+}
+
+.lista-avisos::-webkit-scrollbar {
+  width: 0;
+}
+
+.aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.aviso:hover {
+  background: var(--campo);
+}
+
+.aviso .punto {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--acento);
+}
+
+.aviso.modificado .punto {
+  background: #8fb8ff;
+}
+
+.aviso-texto {
+  flex: 1;
+  min-width: 0;
+}
+
+.aviso-titulo {
+  overflow: hidden;
+  color: var(--texto);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.aviso-detalle {
+  color: var(--tenue);
+  font-size: 11px;
 }
 
 #pedido {

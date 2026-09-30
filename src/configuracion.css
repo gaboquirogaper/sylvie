@@ -164,3 +164,33 @@ button.peligro {
   font-size: 11px;
   text-align: center;
 }
+
+.lista-bases {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.lista-bases li label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 4px;
+  border-radius: 6px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.lista-bases li label:hover {
+  background: var(--fondo);
+}
+
+.lista-bases input[type="checkbox"] {
+  accent-color: var(--acento);
+}
+
+.lista-bases .no-visible {
+  color: var(--tenue);
+  font-size: 11px;
+}
