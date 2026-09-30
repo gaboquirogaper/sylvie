@@ -23,7 +23,13 @@ pub struct Ajustes {
     pub bases: Vec<notion::BaseDatos>,
     /// Conectores de Claude que Sylvie deja usar en los pedidos (prefijos "mcp__…").
     pub claude_apps: Vec<String>,
+    /// "notch" (arriba al centro) o "flotante" (mascota en una esquina).
+    pub apariencia: String,
+    /// Esquina de la mascota flotante: "abajo-der", "abajo-izq", "arriba-der" o "arriba-izq".
+    pub esquina: String,
 }
+
+pub const ESQUINAS: [&str; 4] = ["abajo-der", "abajo-izq", "arriba-der", "arriba-izq"];
 
 impl Default for Ajustes {
     fn default() -> Self {
@@ -31,6 +37,8 @@ impl Default for Ajustes {
             intervalo_minutos: 5,
             bases: Vec::new(),
             claude_apps: vec!["mcp__claude_ai_Notion".into()],
+            apariencia: "notch".into(),
+            esquina: "abajo-der".into(),
         }
     }
 }
@@ -170,9 +178,19 @@ pub fn guardar_ajustes(app: AppHandle, ajustes: Ajustes) -> Result<Ajustes, Stri
             .into_iter()
             .filter(|p| prefijo_valido(p))
             .collect(),
+        apariencia: if ajustes.apariencia == "flotante" { "flotante".into() } else { "notch".into() },
+        esquina: if ESQUINAS.contains(&ajustes.esquina.as_str()) {
+            ajustes.esquina
+        } else {
+            "abajo-der".into()
+        },
     };
+    let antes = leer(&app);
     guardar(&app, &ajustes)?;
     let _ = app.emit("ajustes-cambiados", ());
+    if antes.apariencia != ajustes.apariencia || antes.esquina != ajustes.esquina {
+        crate::notch::aplicar_apariencia(&app);
+    }
     // Revisar enseguida con la configuración nueva (y fijar el punto de partida de bases nuevas).
     app.state::<EstadoAvisos>().revisar_ya();
     Ok(ajustes)

@@ -26,9 +26,11 @@ pub struct Cancion {
     pub clave: String,
 }
 
-/// Portada ya descargada de la canción actual: (clave, data URL).
+/// Portadas ya descargadas: (clave de la canción, data URL). Guarda las últimas 20,
+/// así volver a una canción anterior es instantáneo.
 #[derive(Default)]
-pub struct EstadoMusica(Mutex<Option<(String, String)>>);
+pub struct EstadoMusica(Mutex<Vec<(String, String)>>);
+const MAX_PORTADAS: usize = 20;
 
 /// Lista cerrada: la interfaz nunca manda un nombre de app libre a AppleScript.
 fn nombre_app(etiqueta: &str) -> Result<&'static str, String> {
@@ -112,7 +114,7 @@ fn actual() -> Option<Cancion> {
     None
 }
 
-/// Revisa cada 3 segundos y avisa a la interfaz (la posición cambia, así que avisa seguido).
+/// Revisa cada 1,5 segundos (para enterarse rápido si pasas canciones) y avisa a la interfaz (la posición cambia, así que avisa seguido).
 pub fn iniciar(app: AppHandle) {
     thread::spawn(move || {
         let mut anterior: Option<Cancion> = None;
@@ -124,7 +126,7 @@ pub fn iniciar(app: AppHandle) {
                 anterior = ahora;
                 primera = false;
             }
-            thread::sleep(Duration::from_secs(3));
+            thread::sleep(Duration::from_millis(1500));
         }
     });
 }
@@ -146,7 +148,15 @@ fn a_data_url(bytes: &[u8]) -> Option<String> {
 #[cfg(target_os = "macos")]
 async fn descargar_portada(app: &AppHandle, cancion: &Cancion) -> Option<String> {
     if cancion.app == "Spotify" {
-        let url = osascript("tell application \"Spotify\" to return artwork url of current track")?;
+        // Nombre y portada en la MISMA consulta: así la imagen es de esta canción y no de la anterior.
+        let texto = osascript(
+            "tell application \"Spotify\" to return (name of current track) & tab & (artwork url of current track)",
+        )?;
+        let (nombre, url) = texto.split_once('\t')?;
+        if nombre.trim() != cancion.titulo {
+            return None; // cambió de canción mientras tanto
+        }
+        let url = url.trim().to_string();
         // Solo imágenes de los servidores de Spotify.
         if !url.starts_with("https://i.scdn.co/") {
             return None;
@@ -184,21 +194,29 @@ pub async fn musica_actual() -> Option<Cancion> {
     tauri::async_runtime::spawn_blocking(actual).await.ok().flatten()
 }
 
-/// Portada de la canción actual como data URL (se guarda para no descargarla de nuevo).
+/// Portada de la canción `clave` como data URL. Devuelve None si ya no es la que suena
+/// (así nunca se muestra la portada de otra canción).
 #[tauri::command]
-pub async fn portada_musica(app: AppHandle) -> Option<String> {
-    let cancion = tauri::async_runtime::spawn_blocking(actual).await.ok().flatten()?;
+pub async fn portada_musica(app: AppHandle, clave: String) -> Option<String> {
     {
         let estado = app.state::<EstadoMusica>();
-        let guardada = estado.0.lock().unwrap();
-        if let Some((clave, url)) = guardada.as_ref() {
-            if *clave == cancion.clave {
-                return Some(url.clone());
-            }
+        let guardadas = estado.0.lock().unwrap();
+        if let Some((_, url)) = guardadas.iter().find(|(c, _)| *c == clave) {
+            return Some(url.clone());
         }
     }
+    let cancion = tauri::async_runtime::spawn_blocking(actual).await.ok().flatten()?;
+    if cancion.clave != clave {
+        return None;
+    }
     let url = descargar_portada(&app, &cancion).await?;
-    *app.state::<EstadoMusica>().0.lock().unwrap() = Some((cancion.clave.clone(), url.clone()));
+    let estado = app.state::<EstadoMusica>();
+    let mut guardadas = estado.0.lock().unwrap();
+    guardadas.retain(|(c, _)| *c != clave);
+    guardadas.push((clave, url.clone()));
+    if guardadas.len() > MAX_PORTADAS {
+        guardadas.remove(0);
+    }
     Some(url)
 }
 

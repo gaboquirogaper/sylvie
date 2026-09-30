@@ -5,7 +5,13 @@ import { Mascota } from "./mascota";
 // ══ Tipos ═══════════════════════════════════════════════════════
 type Seccion = "general" | "conexiones" | "notion" | "claude";
 type BaseDatos = { id: string; titulo: string };
-type Ajustes = { intervalo_minutos: number; bases: BaseDatos[]; claude_apps: string[] };
+type Ajustes = {
+  intervalo_minutos: number;
+  bases: BaseDatos[];
+  claude_apps: string[];
+  apariencia: "notch" | "flotante";
+  esquina: string;
+};
 type EstadoApp = { id: string; conectada: boolean };
 type Conector = { nombre: string; prefijo: string; estado: string; conectado: boolean; permitido: boolean };
 
@@ -21,7 +27,14 @@ type AppConexion = {
   /** Pasos para conectar (HTML escrito aquí mismo, no viene de afuera). */
   pasos?: string[];
   enlace?: { url: string; texto: string };
-  campo?: { etiqueta: string; ejemplo: string; secreto: boolean };
+  /** Datos que se piden. Si son varios (Trello), se envían juntos separados por "|". */
+  campos?: { etiqueta: string; ejemplo: string; secreto: boolean }[];
+  /** Si la app depende de otra conexión (Notion Calendar usa la de Google Calendar). */
+  usa?: string;
+  /** Si no tiene llave: funciona sola en la Mac (Música). */
+  automatica?: boolean;
+  /** Botón «Abrir» (id para abrir_app). */
+  abrir?: string;
 };
 
 const APPS: AppConexion[] = [
@@ -45,7 +58,16 @@ const APPS: AppConexion[] = [
       "A la izquierda, en <b>Configuración de mis calendarios</b>, elige tu calendario y baja hasta <b>Integrar el calendario</b>.",
       "Copia la <b>Dirección secreta en formato iCal</b> (termina en <code>basic.ics</code>) y pégala aquí:",
     ],
-    campo: { etiqueta: "Dirección secreta iCal", ejemplo: "https://calendar.google.com/calendar/ical/…/basic.ics", secreto: true },
+    campos: [{ etiqueta: "Dirección secreta iCal", ejemplo: "https://calendar.google.com/calendar/ical/…/basic.ics", secreto: true }],
+  },
+  {
+    id: "notion-calendar",
+    nombre: "Notion Calendar",
+    letra: "31",
+    color: "#f2f2f5",
+    detalle: "Notion Calendar no tiene conexión propia: muestra tus calendarios de Google. Conecta Google Calendar y sus eventos aparecen en Sylvie.",
+    usa: "calendario",
+    abrir: "notion-calendar",
   },
   {
     id: "clickup",
@@ -59,7 +81,7 @@ const APPS: AppConexion[] = [
       "En <b>API Token</b>, pulsa <b>Generar</b> (o <b>Copiar</b> si ya tienes uno).",
       "Pega el token aquí (empieza con <code>pk_</code>):",
     ],
-    campo: { etiqueta: "Token personal", ejemplo: "pk_…", secreto: true },
+    campos: [{ etiqueta: "Token personal", ejemplo: "pk_…", secreto: true }],
   },
   {
     id: "asana",
@@ -73,11 +95,45 @@ const APPS: AppConexion[] = [
       "Pulsa <b>Crear token de acceso personal</b>, llámalo «Sylvie» y acepta.",
       "Copia el token (solo se muestra una vez) y pégalo aquí:",
     ],
-    campo: { etiqueta: "Token de acceso personal", ejemplo: "2/1234…", secreto: true },
+    campos: [{ etiqueta: "Token de acceso personal", ejemplo: "2/1234…", secreto: true }],
+  },
+  {
+    id: "trello",
+    nombre: "Trello",
+    letra: "T",
+    color: "#5ab4f0",
+    detalle: "Tarjetas abiertas donde eres miembro, con su fecha de entrega.",
+    enlace: { url: "https://trello.com/power-ups/admin", texto: "Abrir Trello → Power-Ups (admin) ↗" },
+    pasos: [
+      "En Trello, abre el panel de administración de Power-Ups y pulsa <b>Nuevo</b> (<i>New</i>). Llámalo «Sylvie» y elige tu espacio de trabajo (la URL puede quedar vacía).",
+      "Entra a la pestaña <b>Clave de API</b> (<i>API key</i>) → <b>Generar una nueva clave de API</b> (<i>Generate a new API key</i>) y copia la <b>Clave de API</b>.",
+      "Al lado de la clave, pulsa el enlace <b>Token</b> → <b>Permitir</b> (<i>Allow</i>), y copia el token que aparece. Pega ambos aquí:",
+    ],
+    campos: [
+      { etiqueta: "Clave de API", ejemplo: "Clave de API (32 caracteres)", secreto: false },
+      { etiqueta: "Token", ejemplo: "Token (ATTA…)", secreto: true },
+    ],
+  },
+  {
+    id: "planner",
+    nombre: "Microsoft Planner",
+    letra: "P",
+    color: "#b5e48c",
+    detalle: "Tareas de Microsoft 365. Necesita iniciar sesión con Microsoft (no usa tokens): llegará en una próxima versión.",
+    proximamente: true,
+  },
+  {
+    id: "musica",
+    nombre: "Música",
+    letra: "♪",
+    color: "#6fd6a0",
+    detalle: "Spotify y Apple Music se detectan solos en tu Mac. YouTube y YouTube Music: próximamente.",
+    automatica: true,
+    abrir: "musica",
   },
   {
     id: "saas",
-    nombre: "Tu SaaS",
+    nombre: "Seed Studio",
     letra: "S",
     color: "#f5b971",
     detalle: "Citas nuevas y su asistente de IA.",
@@ -117,7 +173,7 @@ async function ocupado<T>(botones: HTMLButtonElement[], tarea: () => Promise<T>)
 }
 
 // ══ Estado ══════════════════════════════════════════════════════
-let ajustes: Ajustes = { intervalo_minutos: 5, bases: [], claude_apps: [] };
+let ajustes: Ajustes = { intervalo_minutos: 5, bases: [], claude_apps: [], apariencia: "notch", esquina: "abajo-der" };
 let conexiones: Record<string, boolean> = {};
 let appAbierta: string | null = null; // tarjeta de conexión desplegada
 let basesVisibles: BaseDatos[] | null = null;
@@ -146,7 +202,7 @@ document.addEventListener("click", (e) => {
 });
 
 function dibujarResumenes() {
-  const conectables = APPS.filter((a) => !a.proximamente);
+  const conectables = APPS.filter((a) => !a.proximamente && !a.usa && !a.automatica);
   const n = conectables.filter((a) => conexiones[a.id]).length;
   $("#resumen-conexiones").textContent = `${n}/${conectables.length}`;
   $("#resumen-notion").textContent = conexiones.notion ? "✓" : "";
@@ -186,6 +242,36 @@ listen<string | null>("avisos-estado", ({ payload: error }) => {
   else mostrar(mensajeGeneral, `Última revisión: ${new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })} ✓`, "exito");
 });
 
+// Apariencia: notch o mascota flotante (y en qué esquina)
+function dibujarApariencia() {
+  document.querySelectorAll<HTMLButtonElement>("[data-apariencia]").forEach((b) => {
+    const activa = b.dataset.apariencia === ajustes.apariencia;
+    b.classList.toggle("activa", activa);
+    b.setAttribute("aria-checked", String(activa));
+  });
+  document.querySelectorAll<HTMLButtonElement>(".esquinas [data-esquina]").forEach((b) => {
+    const activa = b.dataset.esquina === ajustes.esquina;
+    b.classList.toggle("activa", activa);
+    b.setAttribute("aria-checked", String(activa));
+  });
+  $("#fila-esquina").hidden = ajustes.apariencia !== "flotante";
+}
+
+document.querySelectorAll<HTMLButtonElement>("[data-apariencia]").forEach((b) => {
+  b.addEventListener("click", () => {
+    ajustes.apariencia = b.dataset.apariencia as Ajustes["apariencia"];
+    dibujarApariencia();
+    guardarAjustes(mensajeGeneral);
+  });
+});
+document.querySelectorAll<HTMLButtonElement>(".esquinas [data-esquina]").forEach((b) => {
+  b.addEventListener("click", () => {
+    ajustes.esquina = b.dataset.esquina!;
+    dibujarApariencia();
+    guardarAjustes(mensajeGeneral);
+  });
+});
+
 casillaInicio.addEventListener("change", async () => {
   try {
     casillaInicio.checked = await invoke<boolean>("fijar_inicio_automatico", { activo: casillaInicio.checked });
@@ -202,28 +288,34 @@ casillaInicio.addEventListener("change", async () => {
 
 // ══ Conexiones ══════════════════════════════════════════════════
 function tarjetaApp(app: AppConexion) {
-  const conectada = !!conexiones[app.id];
+  const conectada = app.automatica || !!conexiones[app.usa ?? app.id];
   const abierta = appAbierta === app.id;
   const tarjeta = el("div", `app${abierta ? " abierta" : ""}${app.proximamente ? " apagada" : ""}`);
 
   const cabeza = el("div", "cabeza");
-  const letra = el("span", "letra", app.letra);
+  const letra = el("span", app.letra.length > 1 ? "letra doble" : "letra", app.letra);
   letra.style.background = app.color;
   const textos = el("div", "textos");
   const titulo = el("div", "titulo");
   titulo.append(el("b", "", app.nombre));
   if (app.proximamente) titulo.append(el("span", "chip", "Próximamente"));
+  else if (app.automatica) titulo.append(el("span", "chip ok", "Automática"));
   else if (conectada) titulo.append(el("span", "chip ok", "Conectada"));
   textos.append(titulo, el("small", "", app.detalle));
   const acciones = el("div", "acciones");
 
+  const botonAbrir = () => boton("Abrir", "boton sec", () => invoke("abrir_app", { cual: app.abrir ?? app.id }).catch(console.error));
   if (app.proximamente) {
     // nada que hacer todavía
+  } else if (app.automatica) {
+    acciones.append(botonAbrir());
+  } else if (app.usa) {
+    acciones.append(conectada ? botonAbrir() : boton("Conectar Google Calendar", "boton", () => desplegar(app.usa!)));
   } else if (app.seccion) {
     acciones.append(boton(conectada ? "Ajustar" : "Conectar", conectada ? "boton sec" : "boton", () => ir(app.seccion!)));
   } else if (conectada && !abierta) {
     acciones.append(
-      boton("Abrir", "boton sec", () => invoke("abrir_app", { cual: app.id }).catch(console.error)),
+      botonAbrir(),
       boton("Cambiar", "boton sec", () => desplegar(app.id)),
       boton("Quitar", "boton peligro", () => desconectar(app)),
     );
@@ -233,7 +325,7 @@ function tarjetaApp(app: AppConexion) {
   cabeza.append(letra, textos, acciones);
   tarjeta.append(cabeza);
 
-  if (abierta && app.pasos && app.campo) tarjeta.append(formularioApp(app));
+  if (abierta && app.pasos && app.campos) tarjeta.append(formularioApp(app));
   return tarjeta;
 }
 
@@ -252,15 +344,24 @@ function formularioApp(app: AppConexion) {
   });
 
   const fila = el("div", "campo-fila");
-  const campo = el("input");
-  campo.type = app.campo!.secreto ? "password" : "text";
-  campo.placeholder = app.campo!.ejemplo;
-  campo.autocomplete = "off";
-  campo.spellcheck = false;
-  campo.setAttribute("aria-label", app.campo!.etiqueta);
+  const campos = app.campos!.map((c) => {
+    const campo = el("input");
+    campo.type = c.secreto ? "password" : "text";
+    campo.placeholder = c.ejemplo;
+    campo.autocomplete = "off";
+    campo.spellcheck = false;
+    campo.setAttribute("aria-label", c.etiqueta);
+    return campo;
+  });
   const guardar = el("button", "boton", "Verificar y guardar");
   guardar.type = "submit";
-  fila.append(campo, guardar, boton("Cancelar", "boton sec", () => desplegar(null)));
+  if (campos.length > 1) {
+    fila.classList.add("varios");
+    const columna = el("div", "campos");
+    columna.append(...campos);
+    fila.append(columna);
+  } else fila.append(...campos);
+  fila.append(guardar, boton("Cancelar", "boton sec", () => desplegar(null)));
 
   const mensaje = el("p", "mensaje");
   mensaje.setAttribute("role", "status");
@@ -271,8 +372,9 @@ function formularioApp(app: AppConexion) {
     e.preventDefault();
     mostrar(mensaje, "Verificando…");
     try {
-      const descripcion = await ocupado([guardar], () => invoke<string>("conectar_app", { id: app.id, valor: campo.value }));
-      campo.value = "";
+      const valor = campos.map((c) => c.value.trim()).join("|");
+      const descripcion = await ocupado([guardar], () => invoke<string>("conectar_app", { id: app.id, valor }));
+      campos.forEach((c) => (c.value = ""));
       appAbierta = null;
       await cargarConexiones();
       mostrarGlobal(`✓ Conectado: ${descripcion}`, "exito");
@@ -280,7 +382,7 @@ function formularioApp(app: AppConexion) {
       mostrar(mensaje, String(error), "error");
     }
   });
-  setTimeout(() => campo.focus(), 50);
+  setTimeout(() => campos[0].focus(), 50);
   return form;
 }
 
@@ -517,6 +619,7 @@ async function iniciar() {
 
   ajustes = await invoke<Ajustes>("leer_ajustes");
   campoIntervalo.value = String(ajustes.intervalo_minutos);
+  dibujarApariencia();
   dibujarBases();
   await cargarConexiones();
 
@@ -533,5 +636,11 @@ async function iniciar() {
 
 listen<Seccion>("ir-a-seccion", ({ payload }) => ir(payload));
 listen("conexiones-cambiadas", cargarConexiones);
+// Si arrastras la mascota a otra esquina, se refleja aquí.
+listen<{ modo: string; esquina: string }>("apariencia", ({ payload }) => {
+  ajustes.apariencia = payload.modo === "flotante" ? "flotante" : "notch";
+  ajustes.esquina = payload.esquina;
+  dibujarApariencia();
+});
 
 iniciar();

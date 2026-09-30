@@ -8,6 +8,20 @@
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body data-modo="compacta">
+    <!-- MASCOTA FLOTANTE (Ajustes → General → Apariencia). Arrástrala a cualquier esquina. -->
+    <div id="flotante" class="flotante" hidden>
+      <button id="mascota-flotante" class="nb cuerpo" type="button" aria-label="Sylvie: clic para abrir, arrastra para moverla">
+        <span class="sombra"></span>
+        <canvas id="m-flotante" class="m96"></canvas>
+      </button>
+      <span class="caritas">
+        <button class="carita" type="button" data-id="notion" title="Abrir Notion" aria-label="Abrir Notion"></button>
+        <button class="carita" type="button" data-id="claude" title="Pedirle algo a Claude" aria-label="Pedirle algo a Claude"></button>
+        <button class="carita" type="button" data-id="musica" title="Abrir Spotify o Música" aria-label="Abrir Spotify o Música"></button>
+        <button class="carita" type="button" data-id="bandeja" title="Abrir la bandeja de archivos" aria-label="Abrir la bandeja de archivos"></button>
+      </span>
+    </div>
+
     <div id="notch">
       <div class="oreja izq"></div>
       <div class="oreja der"></div>

@@ -10,7 +10,7 @@ type Pestana = "bienvenida" | "inicio" | "claude" | "bandeja" | "conexiones";
 type Toast = null | "aviso" | "listo" | "cancion" | "aturdida" | "reunion";
 type Segmento = "notion" | "calendario" | "tareas";
 type Evento = { titulo: string; inicio: string; fin: string; todo_el_dia: boolean; enlace: string | null; lugar: string | null };
-type Tarea = { app: "clickup" | "asana"; titulo: string; vence: string | null; lugar: string; url: string };
+type Tarea = { app: "clickup" | "asana" | "trello"; titulo: string; vence: string | null; lugar: string; url: string };
 type Tareas = { tareas: Tarea[]; errores: string[] };
 type EstadoApp = { id: string; conectada: boolean };
 type Aviso = { clave: string; base: string; titulo: string; url: string; tipo: "nuevo" | "modificado"; editado: string };
@@ -21,6 +21,12 @@ type Cancion = { app: string; reproduciendo: boolean; titulo: string; artista: s
 
 // ══ Medidas (la ventana mide 760 de ancho: tauri.conf.json) ═════
 const ANCHO_VENTANA = 760;
+// Mascota flotante: la ventana mide 760×460 (notch.rs) y la mascota ocupa 96×96 en una esquina.
+const ALTO_FLOTANTE = 460;
+const MARGEN_FLOTANTE = 12;
+const TAM_MASCOTA = 96;
+type Esquina = "abajo-der" | "abajo-izq" | "arriba-der" | "arriba-izq";
+type Zona = { x: number; y: number; ancho: number; alto: number };
 const TAMANOS: Record<Modo, { w: number; h: number; r: number }> = {
   compacta: { w: 304, h: 34, r: 14 },
   hover: { w: 348, h: 40, r: 18 },
@@ -38,7 +44,8 @@ const DORMIR_TRAS_SEG = 5 * 60; // 5 minutos sin tocar la Mac
 const MAX_AVISOS = 30;
 const GRACIA_BANDEJA_MS = 12_000; // con la Bandeja abierta: tiempo para ir al Finder y volver arrastrando
 const AVISO_REUNION_MIN = 5; // avisar la reunión 5 minutos antes
-const COLOR_TAREA: Record<Tarea["app"], string> = { clickup: "#c9a0ff", asana: "#ff9e9e" };
+const COLOR_TAREA: Record<Tarea["app"], string> = { clickup: "#c9a0ff", asana: "#ff9e9e", trello: "#5ab4f0" };
+const NOMBRE_TAREA: Record<Tarea["app"], string> = { clickup: "ClickUp", asana: "Asana", trello: "Trello" };
 
 const PLATAFORMAS: Record<string, string> = { Spotify: "#1db954", "Apple Music": "#fa3d5a" };
 const NOTA_SVG = '<svg viewBox="0 0 24 24"><path d="M9 17.5a3 3 0 1 1-2-2.83V5l12-2v11.5a3 3 0 1 1-2-2.83V7.2L9 8.6z"></path></svg>';
@@ -51,14 +58,17 @@ const ICONOS = {
 };
 
 const APPS = [
-  { id: "notion", nombre: "Notion", letra: "N", color: "#e6e6ea", detalle: "Avisos de tus bases y pedidos con Claude" },
-  { id: "claude", nombre: "Claude Code", letra: "C", color: "#f0a07a", detalle: "El cerebro de los pedidos (tu plan)" },
-  { id: "musica", nombre: "Música", letra: "♪", color: "#6fd6a0", detalle: "Spotify y Apple Music en tu Mac" },
-  { id: "calendario", nombre: "Google Calendar", letra: "G", color: "#8fb8ff", detalle: "Próxima reunión y botón para unirte" },
-  { id: "clickup", nombre: "ClickUp", letra: "U", color: "#c9a0ff", detalle: "Tareas y avisos de tus espacios" },
-  { id: "asana", nombre: "Asana", letra: "A", color: "#ff9e9e", detalle: "Tareas asignadas y cambios" },
-  { id: "saas", nombre: "Tu SaaS", letra: "S", color: "#f5b971", detalle: "Citas nuevas y su asistente de IA" },
-  { id: "mas", nombre: "Agregar", letra: "+", color: "#3a3b45", detalle: "Otras apps compatibles con Claude" },
+  { id: "notion", nombre: "Notion", letra: "N", color: "#e6e6ea" },
+  { id: "claude", nombre: "Claude Code", letra: "C", color: "#f0a07a" },
+  { id: "musica", nombre: "Música", letra: "♪", color: "#6fd6a0" },
+  { id: "calendario", nombre: "Google Calendar", letra: "G", color: "#8fb8ff" },
+  { id: "notion-calendar", nombre: "Notion Calendar", letra: "31", color: "#f2f2f5" },
+  { id: "clickup", nombre: "ClickUp", letra: "U", color: "#c9a0ff" },
+  { id: "asana", nombre: "Asana", letra: "A", color: "#ff9e9e" },
+  { id: "trello", nombre: "Trello", letra: "T", color: "#5ab4f0" },
+  { id: "planner", nombre: "Planner", letra: "P", color: "#b5e48c" },
+  { id: "saas", nombre: "Seed Studio", letra: "S", color: "#f5b971" },
+  { id: "mas", nombre: "Agregar", letra: "+", color: "#3a3b45" },
 ];
 
 // ══ Elementos ══════════════════════════════════════════════════
@@ -91,11 +101,15 @@ const mascotas = {
   aturdida: new Mascota($<HTMLCanvasElement>("#m-aturdida")),
   comer: new Mascota($<HTMLCanvasElement>("#m-comer")),
   zona: new Mascota($<HTMLCanvasElement>("#m-zona")),
+  flotante: new Mascota($<HTMLCanvasElement>("#m-flotante")),
 };
 mascotas.aturdida.cambiar("aturdido");
 
 // ══ Estado ═════════════════════════════════════════════════════
 let modo: Modo = "compacta";
+let apariencia: "notch" | "flotante" = "notch";
+let esquina: Esquina = "abajo-der";
+let zonaPendiente = true; // volver a mandar las zonas a Rust aunque el modo no cambie
 let abierta = false;
 let pestana: Pestana = "inicio";
 let segmento: Segmento = "notion";
@@ -173,7 +187,7 @@ function actualizar() {
   const t = TAMANOS[modo];
   notch.style.width = `${t.w}px`;
   notch.style.height = `${t.h}px`;
-  notch.style.borderRadius = `0 0 ${t.r}px ${t.r}px`;
+  notch.style.borderRadius = apariencia === "flotante" ? "24px" : `0 0 ${t.r}px ${t.r}px`;
 
   // Mostrar solo la capa del modo actual.
   const visible = capas[modo];
@@ -186,12 +200,14 @@ function actualizar() {
   });
 
   // Zona que acepta el mouse (el resto de la ventana deja pasar los clics).
-  if (cambio) {
-    invoke("fijar_zona", { zona: { x: (ANCHO_VENTANA - t.w) / 2, y: 0, ancho: t.w, alto: t.h } });
+  if (cambio || zonaPendiente) {
+    zonaPendiente = false;
+    invoke("fijar_zonas", { zonas: zonasActuales(t) });
   }
 
   // Pausar las mascotas que no se ven (ahorra batería).
-  mascotas.compacta.pausar(modo !== "compacta" && modo !== "hover");
+  mascotas.compacta.pausar(apariencia === "flotante" || (modo !== "compacta" && modo !== "hover"));
+  mascotas.flotante.pausar(apariencia !== "flotante");
   mascotas.panel.pausar(modo !== "abierta");
   mascotas.claude.pausar(!(modo === "abierta" && pestana === "claude"));
   mascotas.grande.pausar(!(modo === "abierta" && pestana === "bienvenida"));
@@ -204,6 +220,35 @@ function actualizar() {
 
   actualizarCara();
   actualizarCaritas();
+}
+
+/** Rectángulos donde el mouse interactúa (el resto de la ventana deja pasar los clics). */
+function zonasActuales(t: { w: number; h: number }): Zona[] {
+  if (apariencia === "notch") return [{ x: (ANCHO_VENTANA - t.w) / 2, y: 0, ancho: t.w, alto: t.h }];
+  const der = esquina.endsWith("der");
+  const abajo = esquina.startsWith("abajo");
+  const M = MARGEN_FLOTANTE;
+  const P = TAM_MASCOTA;
+  const px = der ? ANCHO_VENTANA - M - P : M;
+  const py = abajo ? ALTO_FLOTANTE - M - P : M;
+  const zonas: Zona[] = [{ x: px, y: py, ancho: P, alto: P }];
+  // Al asomarse aparecen las caritas al lado de la mascota.
+  if (modo === "hover") zonas.push({ x: der ? px - 8 - 60 : px + P + 8, y: py + P / 2 - 26, ancho: 60, alto: 52 });
+  // Globo o panel: encima de la mascota (si está abajo) o debajo (si está arriba).
+  if (modo !== "compacta" && modo !== "hover") {
+    zonas.push({ x: der ? ANCHO_VENTANA - M - t.w : M, y: abajo ? py - 12 - t.h : py + P + 12, ancho: t.w, alto: t.h });
+  }
+  return zonas;
+}
+
+function fijarApariencia(nueva: string, nuevaEsquina: string) {
+  apariencia = nueva === "flotante" ? "flotante" : "notch";
+  esquina = (["abajo-der", "abajo-izq", "arriba-der", "arriba-izq"].includes(nuevaEsquina) ? nuevaEsquina : "abajo-der") as Esquina;
+  document.body.classList.toggle("flotante", apariencia === "flotante");
+  document.body.dataset.esquina = esquina;
+  $("#flotante").hidden = apariencia !== "flotante";
+  zonaPendiente = true;
+  actualizar();
 }
 
 function abrir(p?: Pestana, enfocar = true) {
@@ -275,6 +320,7 @@ function caraActual(): EstadoMascota {
 function actualizarCara() {
   const cara = caraActual();
   mascotas.compacta.cambiar(cara);
+  mascotas.flotante.cambiar(cara);
   mascotas.panel.cambiar(cara);
   mascotas.toast.cambiar(cara);
   mascotas.claude.cambiar(cara);
@@ -498,7 +544,7 @@ function dibujarTareas() {
       const li = el("li");
       const b = el("button");
       b.type = "button";
-      b.title = `Abrir en ${t.app === "clickup" ? "ClickUp" : "Asana"}`;
+      b.title = `Abrir en ${NOMBRE_TAREA[t.app]}`;
       const punto = el("span", "punto");
       punto.style.background = COLOR_TAREA[t.app];
       const col = el("span", "t-col");
@@ -513,14 +559,16 @@ function dibujarTareas() {
   );
   const p = $("#sin-tareas");
   p.hidden = tareas.length > 0 && erroresTareas.length === 0;
-  if (!conexiones.clickup && !conexiones.asana) vacio(p, "Conecta ClickUp o Asana para ver tus tareas pendientes.", true);
+  if (!hayTareasConectadas()) vacio(p, "Conecta ClickUp, Asana o Trello para ver tus tareas pendientes.", true);
   else if (erroresTareas.length) vacio(p, erroresTareas.join(" "));
   else vacio(p, "No tienes tareas pendientes. ¡Bien!");
   dibujarResumen();
 }
 
+const hayTareasConectadas = () => !!(conexiones.clickup || conexiones.asana || conexiones.trello);
+
 async function cargarTareas() {
-  if (!conexiones.clickup && !conexiones.asana) {
+  if (!hayTareasConectadas()) {
     tareas = [];
     erroresTareas = [];
   } else {
@@ -627,16 +675,55 @@ function dibujarProgreso() {
   }
 }
 
-async function cargarPortada() {
-  const imgs = [$<HTMLImageElement>("#inicio-img"), $<HTMLImageElement>("#cancion-img")];
-  imgs.forEach((i) => (i.hidden = true));
-  if (!cancion) return;
-  const url = await invoke<string | null>("portada_musica").catch(() => null);
-  if (!url || !cancion || cancion.clave !== clavePortada) return;
-  imgs.forEach((i) => {
-    i.src = url;
-    i.hidden = false;
+const dormir = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+
+/** Espera a que el navegador tenga la imagen lista (así no parpadea al cambiarla). */
+function precargar(url: string) {
+  return new Promise<void>((listo) => {
+    const img = new Image();
+    img.onload = img.onerror = () => listo();
+    img.src = url;
   });
+}
+
+let cargaPortada = 0; // cada carga tiene su número; solo la última puede tocar la portada
+
+/**
+ * Pide la portada de la canción `clave`. Mientras llega, la anterior se oscurece un poco
+ * (nunca se transparenta ni deja ver la carátula de Sylvie). Si Sylvie todavía no se enteró
+ * de que cambiaste de canción (pasaste varias muy rápido), pregunta qué suena y empieza de nuevo.
+ */
+async function cargarPortada(clave: string) {
+  const mia = ++cargaPortada;
+  const vigente = () => mia === cargaPortada && clave === clavePortada;
+  const imgs = [$<HTMLImageElement>("#inicio-img"), $<HTMLImageElement>("#cancion-img")];
+  const terminar = (url: string | null) => {
+    if (mia !== cargaPortada) return;
+    document.body.classList.remove("portada-cargando");
+    imgs.forEach((i) => {
+      if (url) i.src = url;
+      i.hidden = !url; // sin portada (p. ej. un podcast): se ve la carátula de Sylvie
+    });
+  };
+  if (!clave) return terminar(null);
+
+  document.body.classList.add("portada-cargando");
+  for (const espera of [0, 700, 1500, 3000]) {
+    if (espera) await dormir(espera);
+    if (!vigente()) return;
+    const url = await invoke<string | null>("portada_musica", { clave }).catch(() => null);
+    if (!vigente()) return;
+    if (url) {
+      await precargar(url);
+      if (vigente()) terminar(url);
+      return;
+    }
+    // ¿Sigue sonando la misma? Si no, esto dispara una carga nueva con la canción real.
+    const ahora = await invoke<Cancion>("musica_actual").catch(() => null);
+    if (!vigente()) return;
+    if ((ahora?.clave || "") !== clave) return recibirCancion(ahora);
+  }
+  terminar(null);
 }
 
 // La barra de progreso se puede arrastrar: al soltar, mueve la canción.
@@ -660,10 +747,11 @@ function recibirCancion(nueva: Cancion) {
   const anterior = cancion;
   cancion = nueva;
   if (nueva) posicion = nueva.posicion;
+  let portadaLista: Promise<void> = Promise.resolve();
   if ((nueva?.clave || "") !== clavePortada) {
     clavePortada = nueva?.clave || "";
     favorita = null;
-    cargarPortada();
+    portadaLista = cargarPortada(clavePortada);
     if (nueva) {
       invoke<boolean | null>("favorito_musica", { appMusica: nueva.app, cambiar: false })
         .then((f) => {
@@ -679,7 +767,12 @@ function recibirCancion(nueva: Cancion) {
     const ahora = Date.now();
     cambiosCancion = [...cambiosCancion.filter((t) => ahora - t < 20000), ahora];
     if (cambiosCancion.length >= 3) djHasta = ahora + 8000;
-    if (nueva.reproduciendo && !abierta) mostrarToast("cancion");
+    // El aviso de canción espera la portada nueva (máximo 1,5 s) para no mostrar la anterior.
+    if (nueva.reproduciendo && !abierta) {
+      Promise.race([portadaLista, dormir(1500)]).then(() => {
+        if (cancion?.clave === nueva.clave && !abierta) mostrarToast("cancion");
+      });
+    }
   }
   actualizar();
 }
@@ -796,17 +889,24 @@ function dibujarConexiones() {
     ...APPS.map((a) => {
       const tarjeta = el("div", "app");
       const cabeza = el("div", "cabeza");
-      const letra = el("span", "letra", a.letra);
+      const letra = el("span", a.letra.length > 1 ? "letra doble" : "letra", a.letra);
       letra.style.background = a.color;
       cabeza.append(letra, el("span", "nombre", a.nombre));
       const boton = el("button");
       boton.type = "button";
       const ajustes = (seccion: string) => () => invoke("abrir_configuracion", { seccion });
-      if (a.id in conexiones) {
-        const ok = conexiones[a.id];
+      const marcar = (ok: boolean, alConectado: () => void, seccion = "conexiones") => {
         boton.textContent = ok ? "Conectada ✓" : "Conectar";
         boton.className = ok ? "conectada" : "conectar";
-        boton.addEventListener("click", ajustes(a.id === "notion" ? "notion" : "conexiones"));
+        boton.addEventListener("click", ok ? alConectado : ajustes(seccion));
+      };
+      if (a.id === "notion") marcar(!!conexiones.notion, ajustes("notion"), "notion");
+      else if (a.id === "notion-calendar") {
+        // Notion Calendar no tiene API: usa tus calendarios de Google (la conexión de Google Calendar).
+        marcar(!!conexiones.calendario, () => invoke("abrir_app", { cual: "notion-calendar" }));
+        tarjeta.title = "Muestra los eventos de tu Google Calendar; el botón abre Notion Calendar";
+      } else if (a.id in conexiones) {
+        marcar(!!conexiones[a.id], () => invoke("abrir_app", { cual: a.id }));
       } else if (a.id === "claude") {
         boton.textContent = "Elegir apps";
         boton.className = "conectada";
@@ -815,15 +915,16 @@ function dibujarConexiones() {
         boton.textContent = "En tu Mac ✓";
         boton.className = "conectada";
         boton.addEventListener("click", () => invoke("abrir_app", { cual: "musica" }));
+        tarjeta.title = "Spotify y Apple Music. YouTube y YouTube Music: próximamente";
       } else if (a.id === "mas") {
-        boton.textContent = "Ver en Ajustes";
+        boton.textContent = "Ver";
         boton.className = "conectada";
         boton.addEventListener("click", ajustes("claude"));
       } else {
-        boton.textContent = "Próximamente";
+        boton.textContent = "Pronto";
         boton.disabled = true;
       }
-      tarjeta.append(cabeza, el("span", "detalle", a.detalle), boton);
+      tarjeta.append(cabeza, boton);
       return tarjeta;
     }),
   );
@@ -1043,6 +1144,42 @@ listen<Fin>("claude-fin", ({ payload }) => {
 listen<Cancion>("musica", ({ payload }) => recibirCancion(payload));
 listen("ajustes-cambiados", actualizarConexiones);
 listen("conexiones-cambiadas", actualizarConexiones);
+// ══ Mascota flotante: clic = abrir/cerrar, arrastrar = moverla de esquina ══
+let presion: { x: number; y: number } | null = null;
+let moviendoMascota = false;
+let tSoltar: number | undefined;
+const botonMascota = $("#mascota-flotante");
+
+botonMascota.addEventListener("mousedown", (e) => {
+  if (e.button === 0) presion = { x: e.screenX, y: e.screenY };
+});
+window.addEventListener("mouseup", () => (presion = null));
+window.addEventListener("mousemove", (e) => {
+  if (!presion || moviendoMascota) return;
+  if (Math.hypot(e.screenX - presion.x, e.screenY - presion.y) < 5) return;
+  presion = null;
+  moviendoMascota = true;
+  if (abierta) cerrar();
+  toast = null;
+  actualizar();
+  getCurrentWindow().startDragging().catch(() => (moviendoMascota = false));
+});
+getCurrentWindow().onMoved(() => {
+  if (!moviendoMascota) return;
+  window.clearTimeout(tSoltar);
+  // Cuando deja de moverse un momento, se pega a la esquina más cercana.
+  tSoltar = window.setTimeout(() => {
+    moviendoMascota = false;
+    invoke("soltar_mascota").catch(console.error);
+  }, 400);
+});
+botonMascota.addEventListener("click", () => {
+  if (moviendoMascota) return;
+  registrarToque(() => (abierta ? cerrar(true) : abrir()));
+});
+
+listen<{ modo: string; esquina: string }>("apariencia", ({ payload }) => fijarApariencia(payload.modo, payload.esquina));
+
 listen("desbloqueo", () => {
   dormida = false;
   bienvenida();
@@ -1062,6 +1199,12 @@ async function revisarInactividad() {
 
 // ══ Arranque ═══════════════════════════════════════════════════
 async function iniciar() {
+  try {
+    const a = await invoke<{ apariencia?: string; esquina?: string }>("leer_ajustes");
+    fijarApariencia(a.apariencia ?? "notch", a.esquina ?? "abajo-der");
+  } catch {
+    /* se queda en modo notch */
+  }
   crearControles();
   elegirSegmento("notion");
   dibujarBandeja();

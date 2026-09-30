@@ -1,5 +1,5 @@
 //! Conexiones con otras apps:
-//! - Google Calendar (dirección secreta iCal), ClickUp y Asana (tokens personales).
+//! - Google Calendar (dirección secreta iCal), ClickUp, Asana y Trello (tokens personales).
 //!   Todo se guarda en el Llavero y solo se lee (Sylvie no modifica nada en esas apps).
 //! - Qué conectores de Claude (los de claude.ai) puede usar Sylvie en los pedidos.
 //! - Abrir apps y enlaces permitidos (botones del notch, «Unirse» a una reunión).
@@ -17,12 +17,17 @@ use crate::{calendario, claude, configuracion, secretos};
 const CUENTA_CALENDARIO: &str = "calendario-ical";
 const CUENTA_CLICKUP: &str = "clickup-token";
 const CUENTA_ASANA: &str = "asana-token";
+/// Trello usa dos datos: clave de API + token. Se guardan juntos como "clave|token".
+const CUENTA_TRELLO: &str = "trello-token";
+const API_TRELLO: &str = "https://api.trello.com/1";
 const API_CLICKUP: &str = "https://api.clickup.com/api/v2";
 const API_ASANA: &str = "https://app.asana.com/api/1.0";
 const MAX_TAREAS: usize = 40;
 
 /// Sitios que Sylvie puede abrir en el navegador.
-const HOSTS_PERMITIDOS: [&str; 7] = [
+const HOSTS_PERMITIDOS: [&str; 9] = [
+    "trello.com",
+    "calendar.notion.so",
     "calendar.google.com",
     "app.clickup.com",
     "app.asana.com",
@@ -37,6 +42,7 @@ fn cuenta(id: &str) -> Result<&'static str, String> {
         "calendario" => Ok(CUENTA_CALENDARIO),
         "clickup" => Ok(CUENTA_CLICKUP),
         "asana" => Ok(CUENTA_ASANA),
+        "trello" => Ok(CUENTA_TRELLO),
         _ => Err("No conozco esa app.".into()),
     }
 }
@@ -64,6 +70,7 @@ pub fn estado_conexiones() -> Result<Vec<EstadoApp>, String> {
         EstadoApp { id: "calendario", conectada: secretos::leer(CUENTA_CALENDARIO)?.is_some() },
         EstadoApp { id: "clickup", conectada: secretos::leer(CUENTA_CLICKUP)?.is_some() },
         EstadoApp { id: "asana", conectada: secretos::leer(CUENTA_ASANA)?.is_some() },
+        EstadoApp { id: "trello", conectada: secretos::leer(CUENTA_TRELLO)?.is_some() },
     ])
 }
 
@@ -91,6 +98,12 @@ pub async fn conectar_app(app: AppHandle, id: String, valor: String) -> Result<S
             let yo = asana(&valor, "/users/me?opt_fields=name").await?;
             let nombre = yo["data"]["name"].as_str().unwrap_or("tu cuenta");
             (valor.clone(), format!("Asana de {nombre}"))
+        }
+        "trello" => {
+            let (clave, token) = partes_trello(&valor)?;
+            let yo = trello(&clave, &token, "/members/me", &[("fields", "fullName,username")]).await?;
+            let nombre = yo["fullName"].as_str().or(yo["username"].as_str()).unwrap_or("tu cuenta");
+            (format!("{clave}|{token}"), format!("Trello de {nombre}"))
         }
         _ => return Err("No conozco esa app.".into()),
     };
@@ -234,13 +247,81 @@ async fn tareas_asana(token: &str) -> Result<Vec<Tarea>, String> {
     Ok(tareas)
 }
 
-/// Tareas pendientes asignadas a ti en ClickUp y Asana (las que vencen antes, primero).
+fn partes_trello(valor: &str) -> Result<(String, String), String> {
+    let (clave, token) = valor
+        .split_once('|')
+        .ok_or("Pega la clave de API y el token de Trello.")?;
+    let (clave, token) = (clave.trim(), token.trim());
+    if clave.is_empty() || token.is_empty() {
+        return Err("Faltan la clave de API o el token de Trello.".into());
+    }
+    let valido = |t: &str| t.chars().all(|c| c.is_ascii_alphanumeric());
+    if !valido(clave) || !valido(token) {
+        return Err("La clave y el token de Trello solo tienen letras y números. Revisa que copiaste bien.".into());
+    }
+    Ok((clave.to_string(), token.to_string()))
+}
+
+async fn trello(clave: &str, token: &str, ruta: &str, extra: &[(&str, &str)]) -> Result<Value, String> {
+    let r = cliente()?
+        .get(format!("{API_TRELLO}{ruta}"))
+        .query(&[("key", clave), ("token", token)])
+        .query(extra)
+        .send()
+        .await
+        .map_err(|e| format!("No pude conectarme a Trello. ¿Hay internet? ({e})"))?;
+    if !r.status().is_success() {
+        return Err(explicar("Trello", r.status().as_u16()));
+    }
+    r.json().await.map_err(|e| format!("Trello respondió algo raro: {e}"))
+}
+
+/// Tarjetas abiertas en las que estás como miembro (las completadas no aparecen).
+async fn tareas_trello(guardado: &str) -> Result<Vec<Tarea>, String> {
+    let (clave, token) = partes_trello(guardado)?;
+    let tableros = trello(&clave, &token, "/members/me/boards", &[("fields", "name"), ("filter", "open")]).await?;
+    let nombres: std::collections::HashMap<String, String> = tableros
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|b| Some((b["id"].as_str()?.to_string(), b["name"].as_str()?.to_string())))
+        .collect();
+    let tarjetas = trello(
+        &clave,
+        &token,
+        "/members/me/cards",
+        &[("filter", "open"), ("fields", "name,due,dueComplete,shortUrl,idBoard")],
+    )
+    .await?;
+    Ok(tarjetas
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|t| t["dueComplete"] != true)
+        .filter(|t| t["idBoard"].as_str().is_some_and(|id| nombres.contains_key(id)))
+        .map(|t| Tarea {
+            app: "trello",
+            titulo: t["name"].as_str().unwrap_or("(Sin nombre)").to_string(),
+            vence: t["due"].as_str().map(String::from),
+            lugar: t["idBoard"].as_str().and_then(|id| nombres.get(id)).cloned().unwrap_or_default(),
+            url: t["shortUrl"].as_str().unwrap_or("https://trello.com").to_string(),
+        })
+        .collect())
+}
+
+/// Tareas pendientes asignadas a ti en ClickUp, Asana y Trello (las que vencen antes, primero).
 #[tauri::command]
 pub async fn tareas_pendientes() -> Result<Tareas, String> {
     let mut tareas = Vec::new();
     let mut errores = Vec::new();
     if let Some(token) = secretos::leer(CUENTA_CLICKUP)? {
         match tareas_clickup(&token).await {
+            Ok(t) => tareas.extend(t),
+            Err(e) => errores.push(e),
+        }
+    }
+    if let Some(guardado) = secretos::leer(CUENTA_TRELLO)? {
+        match tareas_trello(&guardado).await {
             Ok(t) => tareas.extend(t),
             Err(e) => errores.push(e),
         }
@@ -407,7 +488,7 @@ fn corriendo(proceso: &str) -> bool {
 }
 
 /// Botones del notch: abre la app de escritorio (o su web si no está instalada).
-/// Solo acepta: "notion", "musica", "calendario", "clickup", "asana".
+/// Solo acepta: "notion", "musica", "calendario", "notion-calendar", "clickup", "asana", "trello".
 #[tauri::command]
 pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
     let web = match cual.as_str() {
@@ -416,6 +497,8 @@ pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
         "calendario" => "https://calendar.google.com",
         "clickup" => "https://app.clickup.com",
         "asana" => "https://app.asana.com",
+        "trello" => "https://trello.com",
+        "notion-calendar" => "https://calendar.notion.so",
         _ => return Err("No conozco esa app.".into()),
     };
 
@@ -425,6 +508,8 @@ pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
             "notion" => abrir_en_mac("notion.id"),
             "clickup" => abrir_en_mac("com.clickup.desktop-app"),
             "asana" => abrir_en_mac("com.electron.asana"),
+            "trello" => abrir_en_mac("com.atlassian.trello"),
+            "notion-calendar" => abrir_en_mac("com.cron.electron"),
             // Música: la que está sonando; si ninguna, Spotify y si no, Música.
             "musica" => {
                 if corriendo("Spotify") {

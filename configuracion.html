@@ -49,6 +49,35 @@
         <div class="grupo">
           <div class="fila-ajuste">
             <div>
+              <b>Apariencia</b>
+              <small>En el notch de la MacBook, o como mascota flotante (para pantallas sin notch).</small>
+            </div>
+            <div class="opciones" role="radiogroup" aria-label="Apariencia">
+              <button type="button" class="opcion" data-apariencia="notch">
+                <span class="mini-notch"><i></i></span>Notch
+              </button>
+              <button type="button" class="opcion" data-apariencia="flotante">
+                <span class="mini-pantalla"><i></i></span>Flotante
+              </button>
+            </div>
+          </div>
+          <div id="fila-esquina" class="fila-ajuste" hidden>
+            <div>
+              <b>Esquina</b>
+              <small>También puedes arrastrar a Sylvie a otra esquina.</small>
+            </div>
+            <div class="esquinas" role="radiogroup" aria-label="Esquina de la mascota">
+              <button type="button" data-esquina="arriba-izq" aria-label="Arriba a la izquierda"></button>
+              <button type="button" data-esquina="arriba-der" aria-label="Arriba a la derecha"></button>
+              <button type="button" data-esquina="abajo-izq" aria-label="Abajo a la izquierda"></button>
+              <button type="button" data-esquina="abajo-der" aria-label="Abajo a la derecha"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grupo">
+          <div class="fila-ajuste">
+            <div>
               <b>Abrir Sylvie al iniciar sesión</b>
               <small>Aparece sola en el notch cuando prendes la Mac.</small>
             </div>

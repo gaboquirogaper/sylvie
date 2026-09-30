@@ -42,7 +42,8 @@ pub fn run() {
         .manage(musica::EstadoMusica::default())
         .manage(configuracion::SeccionPendiente::default())
         .invoke_handler(tauri::generate_handler![
-            notch::fijar_zona,
+            notch::fijar_zonas,
+            notch::soltar_mascota,
             notch::enfocar,
             configuracion::abrir_configuracion,
             configuracion::tomar_seccion,

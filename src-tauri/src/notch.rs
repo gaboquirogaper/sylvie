@@ -2,11 +2,19 @@
 
 use std::{sync::Mutex, thread, time::Duration};
 
-use serde::Deserialize;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
+
+use crate::configuracion;
 
 /// Nombre interno (label) de la ventana del notch en tauri.conf.json.
 pub const ETIQUETA: &str = "notch";
+
+/// Tamaño de la ventana (transparente) en cada apariencia, en píxeles lógicos.
+const TAM_NOTCH: (f64, f64) = (760.0, 360.0);
+const TAM_FLOTANTE: (f64, f64) = (760.0, 460.0);
+/// Distancia de la mascota flotante al borde de la pantalla.
+const MARGEN_FLOTANTE: f64 = 8.0;
 
 // La ventana es grande (760×360) y casi toda transparente. Para no bloquear
 // lo que hay debajo, ignora el mouse salvo dentro de la "zona interactiva"
@@ -30,7 +38,8 @@ impl Zona {
 }
 
 struct EstadoCursor {
-    zona: Zona,
+    /// Zonas donde el mouse sí interactúa (en la mascota flotante: mascota + globo/panel).
+    zonas: Vec<Zona>,
     /// Último valor avisado a la interfaz (None = hay que volver a avisar).
     ultimo: Option<bool>,
 }
@@ -41,17 +50,17 @@ impl Compartido {
     pub fn nuevo() -> Self {
         Compartido(Mutex::new(EstadoCursor {
             // Zona inicial = estado "escondida" (se corrige apenas carga la interfaz).
-            zona: Zona { x: 228.0, y: 0.0, ancho: 304.0, alto: 34.0 },
+            zonas: vec![Zona { x: 228.0, y: 0.0, ancho: 304.0, alto: 34.0 }],
             ultimo: None,
         }))
     }
 }
 
-/// La interfaz llama a esto cada vez que la píldora cambia de estado.
+/// La interfaz llama a esto cada vez que la píldora (o la mascota) cambia de estado.
 #[tauri::command]
-pub fn fijar_zona(zona: Zona, compartido: tauri::State<Compartido>) {
+pub fn fijar_zonas(zonas: Vec<Zona>, compartido: tauri::State<Compartido>) {
     let mut estado = compartido.0.lock().unwrap();
-    estado.zona = zona;
+    estado.zonas = zonas.into_iter().take(4).collect();
     estado.ultimo = None;
 }
 
@@ -83,7 +92,7 @@ pub fn vigilar_cursor(app: AppHandle) {
         let cambio = {
             let compartido = app.state::<Compartido>();
             let mut estado = compartido.0.lock().unwrap();
-            let dentro = estado.zona.contiene(x, y);
+            let dentro = estado.zonas.iter().any(|z| z.contiene(x, y));
             if estado.ultimo != Some(dentro) {
                 estado.ultimo = Some(dentro);
                 Some(dentro)
@@ -99,16 +108,80 @@ pub fn vigilar_cursor(app: AppHandle) {
     });
 }
 
-/// Centra la ventana en el borde superior de la pantalla principal (= el notch en una MacBook).
-fn ubicar(ventana: &WebviewWindow) -> tauri::Result<()> {
+/// Ubica la ventana según la apariencia elegida en Ajustes:
+/// - notch: centrada en el borde superior de la pantalla principal (= el notch en una MacBook).
+/// - flotante: en la esquina elegida, dentro del área útil (sin tapar el Dock ni la barra de menú).
+fn ubicar(ventana: &WebviewWindow, ajustes: &configuracion::Ajustes) -> tauri::Result<()> {
     let Some(monitor) = ventana.primary_monitor()? else {
         return Ok(());
     };
-    let tam_ventana = ventana.outer_size()?;
-    let pos_monitor = monitor.position();
-    let tam_monitor = monitor.size();
-    let x = pos_monitor.x + (tam_monitor.width as i32 - tam_ventana.width as i32) / 2;
-    ventana.set_position(PhysicalPosition::new(x, pos_monitor.y))?;
+    let flotante = ajustes.apariencia == "flotante";
+    let (ancho, alto) = if flotante { TAM_FLOTANTE } else { TAM_NOTCH };
+    ventana.set_size(LogicalSize::new(ancho, alto))?;
+
+    let escala = monitor.scale_factor();
+    let ancho_f = (ancho * escala) as i32;
+    let alto_f = (alto * escala) as i32;
+
+    if !flotante {
+        let pos = monitor.position();
+        let x = pos.x + (monitor.size().width as i32 - ancho_f) / 2;
+        return ventana.set_position(PhysicalPosition::new(x, pos.y));
+    }
+
+    let area = monitor.work_area();
+    let margen = (MARGEN_FLOTANTE * escala) as i32;
+    let izquierda = area.position.x + margen;
+    let derecha = area.position.x + area.size.width as i32 - ancho_f - margen;
+    let arriba = area.position.y + margen;
+    let abajo = area.position.y + area.size.height as i32 - alto_f - margen;
+    let x = if ajustes.esquina.ends_with("der") { derecha } else { izquierda };
+    let y = if ajustes.esquina.starts_with("abajo") { abajo } else { arriba };
+    ventana.set_position(PhysicalPosition::new(x, y))
+}
+
+#[derive(Clone, Serialize)]
+struct Apariencia {
+    modo: String,
+    esquina: String,
+}
+
+/// Reubica la ventana y avisa a la interfaz (al cambiar la apariencia o la esquina).
+pub fn aplicar_apariencia(app: &AppHandle) {
+    let ajustes = configuracion::leer(app);
+    if let Some(ventana) = app.get_webview_window(ETIQUETA) {
+        let _ = ubicar(&ventana, &ajustes);
+    }
+    let _ = app.emit(
+        "apariencia",
+        Apariencia {
+            modo: ajustes.apariencia,
+            esquina: ajustes.esquina,
+        },
+    );
+}
+
+/// Al terminar de arrastrar la mascota: la pega a la esquina más cercana y la recuerda.
+#[tauri::command]
+pub fn soltar_mascota(app: AppHandle, ventana: WebviewWindow) -> Result<(), String> {
+    let (Ok(pos), Ok(tam), Ok(Some(monitor))) = (ventana.outer_position(), ventana.outer_size(), ventana.primary_monitor()) else {
+        return Err("No pude ubicar la ventana.".into());
+    };
+    let area = monitor.work_area();
+    let centro_x = pos.x + tam.width as i32 / 2;
+    let centro_y = pos.y + tam.height as i32 / 2;
+    let medio_x = area.position.x + area.size.width as i32 / 2;
+    let medio_y = area.position.y + area.size.height as i32 / 2;
+    let esquina = match (centro_y >= medio_y, centro_x >= medio_x) {
+        (true, true) => "abajo-der",
+        (true, false) => "abajo-izq",
+        (false, true) => "arriba-der",
+        (false, false) => "arriba-izq",
+    };
+    let mut ajustes = configuracion::leer(&app);
+    ajustes.esquina = esquina.into();
+    configuracion::guardar(&app, &ajustes)?;
+    aplicar_apariencia(&app);
     Ok(())
 }
 
@@ -140,7 +213,7 @@ pub fn iniciar(app: &AppHandle) -> tauri::Result<()> {
         .get_webview_window(ETIQUETA)
         .expect("Falta la ventana 'notch' en tauri.conf.json");
 
-    ubicar(&ventana)?;
+    ubicar(&ventana, &configuracion::leer(app))?;
     // Al inicio, los clics atraviesan la ventana; el vigilante los activa sobre la píldora.
     ventana.set_ignore_cursor_events(true)?;
 

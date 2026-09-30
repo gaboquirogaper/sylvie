@@ -309,11 +309,12 @@ body.arrastrando .zona { border-color: var(--acento); background: rgba(126, 224,
 .fila-titulo { display: flex; align-items: baseline; gap: 10px; padding: 0 4px; }
 .fila-titulo .t-titulo { font-size: 13px; }
 .fila-titulo .t-mini { flex-grow: 1; }
-.apps { flex-grow: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.app { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.app .cabeza { display: flex; align-items: center; gap: 8px; }
+.apps { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: min-content; gap: 8px; }
+.app { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; padding: 7px 8px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.app .cabeza { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.app .letra.doble { font-size: 10.5px; letter-spacing: -0.02em; }
 .app .letra { width: 26px; height: 26px; border-radius: 8px; color: #0b0b0f; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
-.app .nombre { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .nombre { max-width: 100%; font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app .detalle { font-size: 10.5px; color: var(--tenue); line-height: 1.3; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app button { height: 24px; border-radius: 8px; font-size: 11px; font-weight: 700; }
 .app button.conectar { background: var(--acento); color: var(--acento-texto); }
@@ -323,3 +324,69 @@ body.arrastrando .zona { border-color: var(--acento); background: rgba(126, 224,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
 }
+
+/* Portada: mientras llega la de la canción nueva, la anterior queda atenuada */
+/* Mientras carga la nueva, la portada anterior se oscurece (sin transparencia). */
+.portada img { transition: filter 0.25s ease; }
+body.portada-cargando .portada img { filter: brightness(0.45) saturate(0.6); }
+/* Con portada real, la carátula de Sylvie no se dibuja debajo. */
+.portada:has(img:not([hidden])) .arte { visibility: hidden; }
+
+/* ══ Mascota flotante (Ajustes → General → Apariencia) ═══════════════
+   La ventana mide 760×460 y se ubica en una esquina de la pantalla.
+   La mascota (96×96) va en esa esquina; el globo o el panel aparecen
+   encima de ella (esquinas de abajo) o debajo (esquinas de arriba). */
+#flotante { position: absolute; width: 96px; height: 96px; }
+body[data-esquina$="der"] #flotante { right: 12px; }
+body[data-esquina$="izq"] #flotante { left: 12px; }
+body[data-esquina^="abajo"] #flotante { bottom: 12px; }
+body[data-esquina^="arriba"] #flotante { top: 12px; }
+
+#flotante .cuerpo { position: relative; width: 96px; height: 96px; display: block; cursor: grab; animation: flota 3.4s ease-in-out infinite; transition: transform 0.25s var(--resorte); }
+#flotante .cuerpo:active { cursor: grabbing; }
+body.flotante[data-modo="hover"] #flotante .cuerpo { transform: scale(1.07); }
+#flotante .cuerpo canvas { position: relative; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45)); }
+#flotante .sombra { position: absolute; left: 22px; right: 22px; bottom: 2px; height: 10px; border-radius: 50%; background: rgba(0, 0, 0, 0.35); filter: blur(4px); animation: sombra 3.4s ease-in-out infinite; }
+@keyframes flota { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+@keyframes sombra { 0%, 100% { transform: scaleX(1); opacity: 0.35; } 50% { transform: scaleX(0.82); opacity: 0.22; } }
+
+/* Caritas-botón: una pastilla al lado de la mascota, solo al asomarse */
+#flotante .caritas {
+  position: absolute; top: 22px; padding: 6px 7px; border-radius: 14px;
+  background: var(--negro); border: 1px solid var(--borde);
+  grid-template-columns: repeat(2, 20px);
+  opacity: 0; transform: scale(0.85); pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.25s var(--resorte);
+}
+body[data-esquina$="der"] #flotante .caritas { right: 104px; transform-origin: right center; }
+body[data-esquina$="izq"] #flotante .caritas { left: 104px; transform-origin: left center; }
+body.flotante[data-modo="hover"] #flotante .caritas { opacity: 1; transform: none; pointer-events: auto; }
+#flotante .carita { width: 20px; height: 14px; border-radius: 5px; opacity: 0.55; }
+#flotante .carita.on { opacity: 1; }
+#flotante .carita:hover { opacity: 1; transform: scale(1.12); }
+#flotante .carita::before { left: 5px; top: 4px; height: 4px; }
+#flotante .carita::after { right: 5px; top: 4px; height: 4px; }
+
+/* El "notch" se convierte en globo/panel junto a la mascota */
+body.flotante #notch {
+  left: auto; right: auto; top: auto; bottom: auto; transform: none;
+  border: 1px solid var(--borde); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  transition: width var(--dur) var(--resorte), height var(--dur) var(--resorte), opacity 0.2s ease;
+}
+body.flotante .oreja { display: none; }
+body.flotante[data-esquina$="der"] #notch { right: 12px; transform-origin: right; }
+body.flotante[data-esquina$="izq"] #notch { left: 12px; transform-origin: left; }
+body.flotante[data-esquina^="abajo"] #notch { bottom: 120px; }
+body.flotante[data-esquina^="arriba"] #notch { top: 120px; }
+body.flotante[data-modo="compacta"] #notch,
+body.flotante[data-modo="hover"] #notch { opacity: 0; pointer-events: none; }
+body.flotante .barra-sup { --hueco-notch: 0px; }
+/* Colita del globo apuntando a la mascota */
+body.flotante #notch::after {
+  content: ""; position: absolute; width: 14px; height: 14px; background: var(--negro);
+  border: 1px solid var(--borde); transform: rotate(45deg);
+}
+body.flotante[data-esquina$="der"] #notch::after { right: 40px; }
+body.flotante[data-esquina$="izq"] #notch::after { left: 40px; }
+body.flotante[data-esquina^="abajo"] #notch::after { bottom: -8px; border-top: 0; border-left: 0; }
+body.flotante[data-esquina^="arriba"] #notch::after { top: -8px; border-bottom: 0; border-right: 0; }
