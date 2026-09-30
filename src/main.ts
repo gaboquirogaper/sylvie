@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Mascota, type EstadoMascota } from "./mascota";
 
 // ── Tipos ─────────────────────────────────────────────────────
 // Píldora: escondida → (mouse o aviso) → asomada → (clic) → expandida
@@ -31,12 +32,13 @@ const ESPERA_SALIDA_MS = 250; // antes de esconderse al sacar el mouse
 const DURACION_ANUNCIO_MS = 5000; // cuánto se asoma sola para avisar
 const DURACION_FELIZ_MS = 6000; // cuánto dura la cara "feliz"
 const MAX_AVISOS = 30;
+const VENTANA_TOQUES_MS = 450; // tiempo máximo entre toques a la mascota
 
 // ── Elementos ─────────────────────────────────────────────────
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 
 const cabecera = $<HTMLElement>(".cabecera");
-const mascota = $<HTMLDivElement>("#mascota");
+const mascota = new Mascota($<HTMLCanvasElement>("#mascota"));
 const textoEstado = $<HTMLSpanElement>("#estado");
 const pestanas = $<HTMLElement>(".pestanas");
 const vistas: Record<Vista, HTMLDivElement> = {
@@ -69,6 +71,8 @@ let esperarSalida = false; // tras cerrar a mano, no reasomarse hasta que el mou
 let mouseDentro = false;
 let anunciando = false; // mientras se anuncia algo, no esconderse por falta de mouse
 
+let aturdida = false; // secreto: 3 toques a la mascota
+let felizVigente = false; // la cara "feliz" dura unos segundos tras un pedido exitoso
 let hayToken = false;
 let avisos: Aviso[] = [];
 let sinLeer = 0;
@@ -96,6 +100,7 @@ function elemento<K extends keyof HTMLElementTagNameMap>(etiqueta: K, clase: str
 function aplicarEstado(nuevo: Estado) {
   estado = nuevo;
   document.body.dataset.estado = nuevo;
+  mascota.pausar(nuevo === "escondida");
 
   const zona = ZONAS[nuevo];
   invoke("fijar_zona", {
@@ -138,22 +143,23 @@ function anunciar() {
 
 function actualizarCabecera() {
   let texto = hayToken ? "hola" : "sin Notion";
-  let cara = "";
+  let cara: EstadoMascota = "reposo";
   if (estadoPedido === "trabajando") {
     texto = "pensando";
     cara = "trabajando";
   } else if (estadoPedido === "listo") {
     texto = "¡listo!";
-    cara = "feliz";
+    cara = felizVigente ? "feliz" : "reposo";
   } else if (estadoPedido === "error") {
     texto = "error";
     cara = "alerta";
   } else if (sinLeer > 0) {
     texto = sinLeer === 1 ? "1 aviso" : `${sinLeer} avisos`;
-    cara = "con-avisos";
+    cara = "alerta";
   }
+  if (aturdida) return; // el secreto manda mientras dura
   textoEstado.textContent = texto;
-  mascota.className = cara;
+  mascota.cambiar(cara);
 }
 
 // ── Vistas del panel ──────────────────────────────────────────
@@ -236,17 +242,17 @@ function terminarPedido(ok: boolean, resultado: string) {
   campoPedido.disabled = false;
   campoPedido.placeholder = "Pídele algo a Sylvie… (Enter para enviar)";
   vistas.pedido.scrollTop = vistas.pedido.scrollHeight;
-  actualizarCabecera();
 
+  // La cara feliz dura unos segundos; el resultado queda en pantalla hasta pulsar "Listo".
   window.clearTimeout(temporizadorFeliz);
+  felizVigente = ok;
   if (ok) {
-    // La cara feliz dura unos segundos; el resultado queda en pantalla hasta pulsar "Listo".
     temporizadorFeliz = window.setTimeout(() => {
-      if (estadoPedido === "listo") {
-        mascota.className = "";
-      }
+      felizVigente = false;
+      actualizarCabecera();
     }, DURACION_FELIZ_MS);
   }
+  actualizarCabecera();
   if (estado !== "expandida") anunciar();
 }
 
@@ -283,6 +289,7 @@ botonCancelar.addEventListener("click", () => {
 
 botonListo.addEventListener("click", () => {
   estadoPedido = "ninguno";
+  felizVigente = false;
   window.clearTimeout(temporizadorFeliz);
   mostrarVista(vistaAnterior);
   actualizarCabecera();
@@ -327,9 +334,46 @@ listen("ajustes-cambiados", async () => {
 
 // ── Interacción general ───────────────────────────────────────
 
-cabecera.addEventListener("click", () => {
+function clicCabecera() {
   if (estado === "asomada") cambiarEstado("expandida");
   else if (estado === "expandida") cerrarPanel();
+}
+
+cabecera.addEventListener("click", clicCabecera);
+
+// ── Secreto: 3 toques seguidos a la mascota ───────────────────
+// Un toque solo se comporta como un clic normal (abre/cierra el panel),
+// pero se espera un instante por si llegan más toques.
+
+let toques = 0;
+let temporizadorToques: number | undefined;
+
+function aturdir() {
+  aturdida = true;
+  mascota.cambiar("aturdido");
+  const frases = ["¡hey!", "espera…", "3…", "2…", "1…"];
+  frases.forEach((frase, i) => {
+    window.setTimeout(() => (textoEstado.textContent = frase), i * 750);
+  });
+  window.setTimeout(() => {
+    aturdida = false;
+    actualizarCabecera();
+  }, frases.length * 750);
+}
+
+$<HTMLCanvasElement>("#mascota").addEventListener("click", (e) => {
+  e.stopPropagation(); // la cabecera no debe reaccionar de inmediato
+  toques += 1;
+  window.clearTimeout(temporizadorToques);
+  if (toques >= 3) {
+    toques = 0;
+    if (!aturdida) aturdir();
+    return;
+  }
+  temporizadorToques = window.setTimeout(() => {
+    if (toques === 1) clicCabecera();
+    toques = 0;
+  }, VENTANA_TOQUES_MS);
 });
 
 $<HTMLButtonElement>("#abrir-configuracion").addEventListener("click", () => {

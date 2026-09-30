@@ -89,46 +89,13 @@ body:not([data-estado="escondida"]) .lado {
   width: 190px;
 }
 
-/* Marcador provisional hasta tener el pixel art de Sylvie */
+/* Mascota en pixel art (32×32). Se dibuja a tamaño entero para que se vea nítida. */
 #mascota {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  background: var(--acento);
+  display: block;
+  width: 32px;
+  height: 32px;
+  margin: 2px 0 0 -6px;
   image-rendering: pixelated;
-}
-
-/* Estados provisionales de la mascota (en la fase 6 serán animaciones de pixel art) */
-#mascota.con-avisos {
-  background: #ffb454;
-}
-
-#mascota.trabajando {
-  background: #8fb8ff;
-  animation: latido 0.9s ease-in-out infinite;
-}
-
-#mascota.feliz {
-  background: var(--acento);
-  animation: salto 0.5s ease-out 3;
-}
-
-#mascota.alerta {
-  background: #ff6961;
-  animation: sacudida 0.4s ease-in-out 3;
-}
-
-@keyframes latido {
-  50% { transform: scale(0.75); }
-}
-
-@keyframes salto {
-  40% { transform: translateY(-4px); }
-}
-
-@keyframes sacudida {
-  25% { transform: translateX(-2px); }
-  75% { transform: translateX(2px); }
 }
 
 #estado {
