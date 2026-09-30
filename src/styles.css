@@ -53,7 +53,7 @@ body[data-estado="asomada"] #notch {
 
 body[data-estado="expandida"] #notch {
   width: 480px;
-  height: 290px;
+  height: 325px;
   border-radius: 0 0 22px 22px;
 }
 
@@ -61,6 +61,7 @@ body[data-estado="expandida"] #notch {
 .cabecera {
   box-sizing: border-box;
   height: 37px;
+  transition: height var(--duracion) var(--curva);
   padding: 0 14px;
   display: flex;
   align-items: center;
@@ -96,6 +97,25 @@ body:not([data-estado="escondida"]) .lado {
   height: 32px;
   margin: 2px 0 0 -6px;
   image-rendering: pixelated;
+  transition:
+    width var(--duracion) var(--curva),
+    height var(--duracion) var(--curva),
+    margin var(--duracion) var(--curva);
+}
+
+/* Panel abierto: la cabecera crece y la mascota se ve al doble (64 px, sigue nítida) */
+body[data-estado="expandida"] .cabecera {
+  height: 72px;
+}
+
+body[data-estado="expandida"] #mascota {
+  width: 64px;
+  height: 64px;
+  margin: 6px 0 0 -4px;
+}
+
+body[data-estado="expandida"] #estado {
+  font-size: 13px;
 }
 
 #estado {
@@ -379,6 +399,8 @@ body[data-estado="expandida"] .panel {
 
 /* Si activaste "Reducir movimiento" en macOS/Windows, sin animaciones */
 @media (prefers-reduced-motion: reduce) {
+  #mascota,
+  .cabecera,
   #notch,
   .lado,
   .panel {

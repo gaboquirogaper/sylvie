@@ -26,7 +26,7 @@ const ANCHO_VENTANA = 520;
 const ZONAS: Record<Estado, { ancho: number; alto: number }> = {
   escondida: { ancho: 200, alto: 34 },
   asomada: { ancho: 320, alto: 37 },
-  expandida: { ancho: 480, alto: 290 },
+  expandida: { ancho: 480, alto: 325 },
 };
 const ESPERA_SALIDA_MS = 250; // antes de esconderse al sacar el mouse
 const DURACION_ANUNCIO_MS = 5000; // cuánto se asoma sola para avisar
