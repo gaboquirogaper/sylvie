@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permisos de la ventana del notch",
-  "windows": ["notch"],
+  "description": "Permisos de las ventanas de Sylvie",
+  "windows": ["notch", "configuracion"],
   "permissions": ["core:default", "opener:default"]
 }

@@ -77,6 +77,11 @@ cabecera.addEventListener("click", () => {
   else if (estado === "expandida") cerrarPanel();
 });
 
+// Botón "Configuración" del panel (alternativa al menú de la barra).
+document.querySelector<HTMLButtonElement>("#abrir-configuracion")!.addEventListener("click", () => {
+  invoke("abrir_configuracion");
+});
+
 // Esc cierra el panel.
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && estado === "expandida") cerrarPanel();
@@ -87,13 +92,17 @@ getCurrentWindow().onFocusChanged(({ payload: enfocada }) => {
   if (!enfocada && estado === "expandida") cambiarEstado("escondida");
 });
 
-// Menú de la barra → Configuración (la ventana real llega en la fase 3).
-listen("abrir-configuracion", () => {
-  textoEstado.textContent = "pronto";
-  setTimeout(() => {
-    textoEstado.textContent = "hola";
-  }, 3000);
-});
+// Texto de la derecha: "hola" si Notion está conectado; si no, un recordatorio.
+async function actualizarTexto() {
+  try {
+    const hayToken = await invoke<boolean>("hay_token");
+    textoEstado.textContent = hayToken ? "hola" : "sin Notion";
+  } catch {
+    textoEstado.textContent = "sin Notion";
+  }
+}
+listen("ajustes-cambiados", actualizarTexto);
+actualizarTexto();
 
 // Arranque: dejar a Rust sincronizado con el estado inicial.
 aplicarEstado("escondida");

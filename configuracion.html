@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/configuracion.css" />
+    <title>Configuración de Sylvie</title>
+    <script type="module" src="/src/configuracion.ts" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Configuración</h1>
+
+      <section class="tarjeta">
+        <h2>Notion</h2>
+        <p class="ayuda">
+          Sylvie usa el token de una integración interna de Notion para revisar tus bases de datos.
+          Se guarda en el Llavero de macOS, nunca en un archivo.
+        </p>
+
+        <div id="con-token" hidden>
+          <p class="ok">✓ Token guardado en el Llavero</p>
+          <div class="fila">
+            <button id="probar" type="button">Probar conexión</button>
+            <button id="cambiar" type="button" class="secundario">Cambiar</button>
+            <button id="borrar" type="button" class="peligro">Borrar</button>
+          </div>
+        </div>
+
+        <form id="form-token" hidden>
+          <label for="token">Token de integración</label>
+          <input id="token" type="password" placeholder="ntn_…" autocomplete="off" spellcheck="false" />
+          <div class="fila">
+            <button type="submit">Verificar y guardar</button>
+            <button id="cancelar" type="button" class="secundario" hidden>Cancelar</button>
+          </div>
+        </form>
+
+        <p id="mensaje-notion" class="mensaje" role="status"></p>
+      </section>
+
+      <section class="tarjeta">
+        <h2>Avisos</h2>
+        <label for="intervalo">Revisar Notion cada</label>
+        <div class="fila">
+          <input id="intervalo" type="number" min="1" max="120" step="1" />
+          <span>minutos</span>
+        </div>
+        <p class="ayuda">Las bases de datos a vigilar se eligen aquí en la fase 4.</p>
+        <p id="mensaje-intervalo" class="mensaje" role="status"></p>
+      </section>
+
+      <p class="privacidad">
+        Sin telemetría: Sylvie solo habla con Notion y con Claude Code en tu Mac.
+      </p>
+    </main>
+  </body>
+</html>

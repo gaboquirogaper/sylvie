@@ -10,6 +10,15 @@ export default defineConfig(() => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  // Sylvie tiene dos páginas: el notch (index.html) y la Configuración.
+  build: {
+    rollupOptions: {
+      input: {
+        notch: "index.html",
+        configuracion: "configuracion.html",
+      },
+    },
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

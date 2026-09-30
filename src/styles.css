@@ -118,8 +118,29 @@ body[data-estado="expandida"] .panel {
   transition-delay: 0.16s;
 }
 
+.fila-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+#abrir-configuracion {
+  padding: 3px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tenue);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#abrir-configuracion:hover {
+  color: var(--texto);
+}
+
 .titulo {
-  margin: 0 0 4px;
+  margin: 0;
   color: var(--texto);
   font-size: 13px;
   font-weight: 600;
