@@ -191,6 +191,41 @@ listen<string | null>("avisos-estado", ({ payload: error }) => {
   }
 });
 
+// ── General: inicio automático ────────────────────────────────
+
+const casillaInicio = $<HTMLInputElement>("#inicio-automatico");
+const mensajeGeneral = $<HTMLParagraphElement>("#mensaje-general");
+let esDesarrollo = false;
+
+casillaInicio.addEventListener("change", async () => {
+  try {
+    casillaInicio.checked = await invoke<boolean>("fijar_inicio_automatico", {
+      activo: casillaInicio.checked,
+    });
+    if (esDesarrollo && casillaInicio.checked) {
+      mostrar(
+        mensajeGeneral,
+        "Ojo: estás en modo desarrollo. Actívalo desde la app instalada, no desde la terminal.",
+        "error",
+      );
+    } else {
+      mostrar(mensajeGeneral, "Guardado.", "exito");
+      setTimeout(() => mostrar(mensajeGeneral, ""), 2000);
+    }
+  } catch (error) {
+    mostrar(mensajeGeneral, String(error), "error");
+  }
+});
+
+async function iniciarGeneral() {
+  try {
+    esDesarrollo = await invoke<boolean>("modo_desarrollo");
+    casillaInicio.checked = await invoke<boolean>("inicio_automatico");
+  } catch (error) {
+    mostrar(mensajeGeneral, String(error), "error");
+  }
+}
+
 // ── Arranque ──────────────────────────────────────────────────
 
 async function iniciar() {
@@ -206,6 +241,7 @@ async function iniciar() {
   }
   vistaToken(hayToken);
   if (hayToken) buscarBases();
+  iniciarGeneral();
 }
 
 iniciar();

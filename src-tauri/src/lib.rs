@@ -24,6 +24,11 @@ mod secretos;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Abrir al iniciar sesión (Mac: LaunchAgent; Windows: registro de inicio).
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(notch::Compartido::nuevo())
         .manage(avisos::EstadoAvisos::default())
         .manage(claude::EstadoClaude::default())
@@ -38,6 +43,9 @@ pub fn run() {
             configuracion::listar_bases,
             configuracion::leer_ajustes,
             configuracion::guardar_ajustes,
+            configuracion::inicio_automatico,
+            configuracion::fijar_inicio_automatico,
+            configuracion::modo_desarrollo,
             avisos::avisos_recientes,
             avisos::revisar_ahora,
             avisos::abrir_en_notion,

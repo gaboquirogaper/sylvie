@@ -194,3 +194,16 @@ button.peligro {
   color: var(--tenue);
   font-size: 11px;
 }
+
+label.casilla {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+label.casilla input {
+  accent-color: var(--acento);
+}

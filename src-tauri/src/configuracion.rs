@@ -145,3 +145,31 @@ pub fn guardar_ajustes(app: AppHandle, ajustes: Ajustes) -> Result<Ajustes, Stri
     app.state::<EstadoAvisos>().revisar_ya();
     Ok(ajustes)
 }
+
+// ── Inicio automático ───────────────────────────────────────────
+
+/// ¿Sylvie se abre sola al iniciar sesión?
+#[tauri::command]
+pub fn inicio_automatico(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| format!("No pude consultar el inicio automático: {e}"))
+}
+
+#[tauri::command]
+pub fn fijar_inicio_automatico(app: AppHandle, activo: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let lanzador = app.autolaunch();
+    let resultado = if activo { lanzador.enable() } else { lanzador.disable() };
+    resultado.map_err(|e| format!("No pude cambiar el inicio automático: {e}"))?;
+    lanzador
+        .is_enabled()
+        .map_err(|e| format!("No pude consultar el inicio automático: {e}"))
+}
+
+/// true cuando corre con `npm run tauri dev` (no la app instalada).
+#[tauri::command]
+pub fn modo_desarrollo() -> bool {
+    cfg!(debug_assertions)
+}
