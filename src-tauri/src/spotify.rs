@@ -8,6 +8,9 @@
 //! 3. Spotify vuelve a 127.0.0.1:43517 (tu propia Mac) con un código que Sylvie cambia por el permiso.
 //! Se guarda en el Llavero: Client ID + refresh token. Permisos pedidos: leer y modificar "Tus me gusta".
 
+// Varias partes solo se usan en Mac (en Windows llegarán en la fase 8).
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
+
 use std::{
     io::{Read, Write},
     net::TcpListener,

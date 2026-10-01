@@ -9,6 +9,9 @@
 //!   Sin eso, Sylvie muestra el título pero no puede controlar la reproducción (control = false).
 //! - Solo mira pestañas de youtube.com/watch, youtube.com/shorts y music.youtube.com.
 
+// Varias partes solo se usan en Mac (en Windows llegarán en la fase 8).
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,

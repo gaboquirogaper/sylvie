@@ -5,10 +5,13 @@
 //! - La primera vez, macOS pide permiso: "Sylvie quiere controlar Spotify/Música".
 //! - Portada: Spotify da un enlace (se descarga la imagen); Apple Music entrega la imagen
 //!   directamente. En ambos casos se convierte a "data URL" para la interfaz.
-//! - Favorito: solo Apple Music lo permite por AppleScript.
+//! - Favorito: Apple Music por AppleScript; Spotify con su API web (spotify.rs), si lo conectas.
 //! - En Windows se hará en la fase 8 con la función oficial de Windows (SMTC).
 
-use std::{process::Command, sync::Mutex, thread, time::Duration};
+use std::{sync::Mutex, thread, time::Duration};
+
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -45,6 +48,7 @@ fn nombre_app(etiqueta: &str) -> Result<&'static str, String> {
 }
 
 /// AppleScript convierte los decimales según el idioma (1,5 en español): lo normalizamos.
+#[cfg(target_os = "macos")]
 fn numero(texto: &str) -> f64 {
     texto.trim().replace(',', ".").parse().unwrap_or(0.0)
 }
@@ -144,6 +148,7 @@ pub fn iniciar(app: AppHandle) {
 
 // ── Portada ─────────────────────────────────────────────────────
 
+#[cfg(target_os = "macos")]
 fn a_data_url(bytes: &[u8]) -> Option<String> {
     use base64::Engine;
     if bytes.len() < 16 {
