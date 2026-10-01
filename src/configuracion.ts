@@ -6,6 +6,7 @@ import { Mascota } from "./mascota";
 type Seccion = "general" | "conexiones" | "notion" | "claude";
 type BaseDatos = { id: string; titulo: string };
 type Ajustes = {
+  youtube: boolean;
   intervalo_minutos: number;
   bases: BaseDatos[];
   claude_apps: string[];
@@ -35,6 +36,8 @@ type AppConexion = {
   automatica?: boolean;
   /** Botón «Abrir» (id para abrir_app). */
   abrir?: string;
+  /** Se conecta iniciando sesión (Microsoft o Spotify) en vez de pegar un token. */
+  login?: "planner" | "spotify";
 };
 
 const APPS: AppConexion[] = [
@@ -119,17 +122,43 @@ const APPS: AppConexion[] = [
     nombre: "Microsoft Planner",
     letra: "P",
     color: "#b5e48c",
-    detalle: "Tareas de Microsoft 365. Necesita iniciar sesión con Microsoft (no usa tokens): llegará en una próxima versión.",
-    proximamente: true,
+    detalle: "Tareas de Microsoft 365 asignadas a ti. Se conecta iniciando sesión con Microsoft (con una cuenta de trabajo o estudio).",
+    enlace: {
+      url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM",
+      texto: "Abrir Microsoft Entra → Registros de aplicaciones ↗",
+    },
+    pasos: [
+      "Microsoft pide que Sylvie esté registrada en tu cuenta (es gratis, una sola vez). Abre <b>Registros de aplicaciones</b> → <b>Nuevo registro</b>. Nombre: «Sylvie». Tipo de cuenta: <b>Solo cuentas de este directorio organizativo</b> (o «cualquier directorio organizativo»). Deja vacío el URI de redirección → <b>Registrar</b>.",
+      "En la app, entra a <b>Autenticación</b> y activa <b>Permitir flujos de clientes públicos</b> → <b>Sí</b> → <b>Guardar</b>.",
+      "En <b>Información general</b>, copia el <b>Id. de aplicación (cliente)</b>, pégalo aquí y pulsa «Iniciar sesión». Te daré un código para escribir en la página de Microsoft.",
+    ],
+    campos: [{ etiqueta: "Id. de aplicación (cliente)", ejemplo: "1a2b3c4d-1111-2222-3333-444455556666", secreto: false }],
+    login: "planner",
   },
   {
     id: "musica",
     nombre: "Música",
     letra: "♪",
     color: "#6fd6a0",
-    detalle: "Spotify y Apple Music se detectan solos en tu Mac. YouTube y YouTube Music: próximamente.",
+    detalle: "Spotify y Apple Music se detectan solos en tu Mac. YouTube y YouTube Music, en tu navegador.",
     automatica: true,
     abrir: "musica",
+  },
+  {
+    id: "spotify",
+    nombre: "Spotify (corazón)",
+    letra: "♥",
+    color: "#1db954",
+    detalle: "Para que el corazón de Sylvie guarde canciones en «Tus me gusta». La música se ve igual sin esto.",
+    abrir: "musica",
+    enlace: { url: "https://developer.spotify.com/dashboard", texto: "Abrir el panel de desarrolladores de Spotify ↗" },
+    pasos: [
+      "Entra con tu cuenta de Spotify y pulsa <b>Create app</b>. Nombre: «Sylvie»; descripción: la que quieras.",
+      "En <b>Redirect URIs</b> pega exactamente esta dirección y pulsa <b>Add</b>: <code>http://127.0.0.1:43517/callback</code> Luego marca <b>Web API</b>, acepta los términos y pulsa <b>Save</b>.",
+      "Abre <b>Settings</b> de la app, copia el <b>Client ID</b>, pégalo aquí y pulsa «Iniciar sesión». Se abrirá Spotify en tu navegador para que aceptes.",
+    ],
+    campos: [{ etiqueta: "Client ID de Spotify", ejemplo: "Client ID (32 letras y números)", secreto: false }],
+    login: "spotify",
   },
   {
     id: "saas",
@@ -173,7 +202,7 @@ async function ocupado<T>(botones: HTMLButtonElement[], tarea: () => Promise<T>)
 }
 
 // ══ Estado ══════════════════════════════════════════════════════
-let ajustes: Ajustes = { intervalo_minutos: 5, bases: [], claude_apps: [], apariencia: "notch", esquina: "abajo-der" };
+let ajustes: Ajustes = { youtube: true, intervalo_minutos: 5, bases: [], claude_apps: [], apariencia: "notch", esquina: "abajo-der" };
 let conexiones: Record<string, boolean> = {};
 let appAbierta: string | null = null; // tarjeta de conexión desplegada
 let basesVisibles: BaseDatos[] | null = null;
@@ -325,7 +354,8 @@ function tarjetaApp(app: AppConexion) {
   cabeza.append(letra, textos, acciones);
   tarjeta.append(cabeza);
 
-  if (abierta && app.pasos && app.campos) tarjeta.append(formularioApp(app));
+  if (abierta && app.pasos && app.campos) tarjeta.append(app.login ? formularioLogin(app) : formularioApp(app));
+  if (app.id === "musica") tarjeta.append(opcionesMusica());
   return tarjeta;
 }
 
@@ -335,6 +365,28 @@ function formularioApp(app: AppConexion) {
   app.pasos!.forEach((texto, i) => {
     const li = el("li");
     li.innerHTML = texto; // texto fijo escrito arriba, no viene de internet
+    // Las direcciones (http…) se muestran en una cajita con botón «Copiar».
+    li.querySelectorAll("code").forEach((c) => {
+      const valor = c.textContent ?? "";
+      if (!valor.startsWith("http")) return;
+      const caja = el("span", "copiable");
+      const copiar = boton("Copiar", "copiar");
+      copiar.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(valor);
+          copiar.textContent = "¡Copiado!";
+          copiar.classList.add("hecho");
+          setTimeout(() => {
+            copiar.textContent = "Copiar";
+            copiar.classList.remove("hecho");
+          }, 1800);
+        } catch {
+          copiar.textContent = "Selecciónalo y copia";
+        }
+      });
+      c.replaceWith(caja);
+      caja.append(c, copiar);
+    });
     if (i === 0 && app.enlace) {
       const b = boton(app.enlace.texto, "enlace");
       b.dataset.url = app.enlace.url;
@@ -370,6 +422,7 @@ function formularioApp(app: AppConexion) {
   form.append(pasos, fila, mensaje, nota);
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (app.login) return; // Planner usa su propio inicio de sesión (formularioLogin)
     mostrar(mensaje, "Verificando…");
     try {
       const valor = campos.map((c) => c.value.trim()).join("|");
@@ -384,6 +437,138 @@ function formularioApp(app: AppConexion) {
   });
   setTimeout(() => campos[0].focus(), 50);
   return form;
+}
+
+let loginsListos = { spotify: false, planner: false };
+
+/**
+ * Spotify y Planner se conectan iniciando sesión en el navegador.
+ * Si Sylvie trae su propio ID (claves_publicas.rs), basta un botón. Si no (o si prefieres),
+ * «Usar mi propia app» muestra los pasos para crear una y pegar su ID.
+ */
+function formularioLogin(app: AppConexion) {
+  const esSpotify = app.login === "spotify";
+  const listo = esSpotify ? loginsListos.spotify : loginsListos.planner;
+  const caja = el("div", "login");
+  const mensaje = el("p", "mensaje");
+  mensaje.setAttribute("role", "status");
+  const codigo = el("div", "codigo-login");
+  codigo.hidden = true;
+
+  const iniciar = async (cliente: string | null, boton: HTMLButtonElement) => {
+    if (esSpotify) {
+      try {
+        await ocupado([boton], () => invoke("spotify_iniciar", { cliente }));
+        mostrar(mensaje, "Se abrió Spotify en tu navegador: pulsa «Aceptar» y vuelve aquí…");
+      } catch (error) {
+        mostrar(mensaje, String(error), "error");
+      }
+      return;
+    }
+    mostrar(mensaje, "Pidiendo un código a Microsoft…");
+    try {
+      const r = await ocupado([boton], () =>
+        invoke<{ codigo: string; url: string; minutos: number }>("planner_iniciar", { cliente }),
+      );
+      const abrirPagina = boton2("Abrir la página de Microsoft ↗", "boton", () => {
+        navigator.clipboard.writeText(r.codigo).catch(() => {});
+        invoke("abrir_enlace", { url: r.url }).catch(console.error);
+      });
+      codigo.replaceChildren(
+        el("span", "tenue", "Escribe este código en la página de Microsoft (ya queda copiado al abrirla):"),
+        el("b", "codigo", r.codigo),
+        boton2("Copiar código", "boton sec", () => navigator.clipboard.writeText(r.codigo).catch(() => {})),
+        abrirPagina,
+      );
+      codigo.hidden = false;
+      mostrar(mensaje, `Esperando que inicies sesión… (el código dura ${r.minutos} minutos)`);
+    } catch (error) {
+      mostrar(mensaje, String(error), "error");
+    }
+  };
+  const boton2 = boton;
+
+  // Camino fácil: un solo botón.
+  if (listo) {
+    const simple = el("div", "login-simple");
+    const conectar = boton(esSpotify ? "Conectar con Spotify" : "Iniciar sesión con Microsoft", "boton");
+    conectar.addEventListener("click", () => iniciar(null, conectar));
+    simple.append(
+      el("p", "", esSpotify
+        ? "Se abrirá Spotify en tu navegador. Pulsa «Aceptar» y listo."
+        : "Te daré un código: lo escribes en la página de Microsoft e inicias sesión con tu cuenta de trabajo o estudio."),
+      conectar,
+      boton("Cancelar", "boton sec", () => desplegar(null)),
+    );
+    caja.append(simple);
+  }
+
+  // Camino avanzado: tu propia app (los pasos de siempre).
+  const avanzado = el("details", "avanzado");
+  avanzado.open = !listo;
+  avanzado.append(el("summary", "", listo ? "Usar mi propia app (avanzado)" : "Crear la app (una sola vez)"));
+  const form = formularioApp(app);
+  form.querySelector(".mensaje")?.remove();
+  const guardar = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  guardar.textContent = "Iniciar sesión";
+  const campo = form.querySelector<HTMLInputElement>("input")!;
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    iniciar(campo.value, guardar);
+  });
+  avanzado.append(form);
+  form.querySelector(".chico")?.remove();
+
+  const nota = el("p", "tenue chico",
+    esSpotify
+      ? "Sylvie nunca ve tu contraseña: aceptas en la página de Spotify. Solo pide permiso para «Tus me gusta», y se guarda en el Llavero."
+      : "Sylvie nunca ve tu contraseña: inicias sesión en la página de Microsoft. Solo pide permiso para leer tus tareas, y se guarda en el Llavero.");
+  caja.append(codigo, mensaje, avanzado, nota);
+  return caja;
+}
+
+const alTerminarLogin = async ({ payload }: { payload: { ok: boolean; mensaje: string } }) => {
+  if (payload.ok) {
+    appAbierta = null;
+    await cargarConexiones();
+    mostrarGlobal(`✓ Conectado: ${payload.mensaje}`, "exito");
+  } else {
+    const m = document.querySelector<HTMLElement>(".app.abierta .mensaje");
+    if (m) mostrar(m, payload.mensaje, "error");
+    else mostrarGlobal(payload.mensaje, "error");
+  }
+};
+listen<{ ok: boolean; mensaje: string }>("planner-login", alTerminarLogin);
+listen<{ ok: boolean; mensaje: string }>("spotify-login", alTerminarLogin);
+
+/** Música: interruptor de YouTube y cómo activar el control en el navegador. */
+function opcionesMusica() {
+  const caja = el("div", "extra-musica");
+  const fila = el("div", "fila-youtube");
+  const textos = el("div");
+  textos.append(el("b", "", "YouTube y YouTube Music en el navegador"), el("small", "", "Chrome, Brave, Edge o Safari. macOS te pedirá permiso la primera vez."));
+  const interruptor = el("label", "interruptor");
+  const casilla = el("input");
+  casilla.type = "checkbox";
+  casilla.checked = ajustes.youtube;
+  casilla.setAttribute("aria-label", "Buscar YouTube en el navegador");
+  casilla.addEventListener("change", () => {
+    ajustes.youtube = casilla.checked;
+    guardarAjustes(document.querySelector<HTMLElement>("#aviso-conexiones") ?? mensajeGeneral);
+  });
+  interruptor.append(casilla, el("span"));
+  fila.append(textos, interruptor);
+
+  const ayuda = el("details", "ayuda-youtube");
+  const resumen = el("summary", "", "Para pausar, pasar y ver la portada desde Sylvie…");
+  const lista = el("ul");
+  lista.innerHTML =
+    "<li><b>Chrome, Brave o Edge:</b> menú <b>Ver → Opciones para desarrolladores → Permitir JavaScript desde eventos de Apple</b>.</li>" +
+    "<li><b>Safari:</b> activa el menú Desarrollo (Ajustes → Avanzado → Mostrar funciones para desarrolladores web) y luego <b>Desarrollo → Permitir JavaScript desde eventos de Apple</b>.</li>" +
+    "<li>Sin eso, Sylvie igual muestra qué video suena, pero sin botones.</li>";
+  ayuda.append(resumen, lista);
+  caja.append(fila, ayuda);
+  return caja;
 }
 
 function mostrarGlobal(texto: string, tipo: "exito" | "error") {
@@ -618,6 +803,7 @@ async function iniciar() {
   mascota.cambiar("reposo");
 
   ajustes = await invoke<Ajustes>("leer_ajustes");
+  loginsListos = await invoke<typeof loginsListos>("logins_listos").catch(() => loginsListos);
   campoIntervalo.value = String(ajustes.intervalo_minutos);
   dibujarApariencia();
   dibujarBases();

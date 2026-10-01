@@ -14,6 +14,7 @@
         <span class="sombra"></span>
         <canvas id="m-flotante" class="m96"></canvas>
       </button>
+      <div class="barra-airdrop" aria-hidden="true"><i></i></div>
       <span class="caritas">
         <button class="carita" type="button" data-id="notion" title="Abrir Notion" aria-label="Abrir Notion"></button>
         <button class="carita" type="button" data-id="claude" title="Pedirle algo a Claude" aria-label="Pedirle algo a Claude"></button>
@@ -23,6 +24,7 @@
     </div>
 
     <div id="notch">
+      <div class="barra-airdrop" aria-hidden="true"><i></i></div>
       <div class="oreja izq"></div>
       <div class="oreja der"></div>
       <div class="recorte">
@@ -139,7 +141,7 @@
               </div>
               <div class="musica-col">
                 <span id="inicio-titulo" class="t-titulo">Nada sonando</span>
-                <span id="inicio-artista" class="t-artista">Abre Spotify o Música</span>
+                <span id="inicio-artista" class="t-artista">Abre Spotify, Música o YouTube</span>
                 <div class="progreso">
                   <input id="inicio-barra" class="barra" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición de la canción" />
                   <div class="tiempos"><span id="inicio-actual">0:00</span><span id="inicio-total">0:00</span></div>
@@ -194,8 +196,13 @@
                   <ul id="historial" class="historial"></ul>
                 </div>
               </div>
+              <div id="adjuntos" class="adjuntos" hidden></div>
+              <div id="menu-adjuntar" class="menu-adjuntar" hidden></div>
               <form id="form-pedido" class="entrada">
                 <label class="sr" for="pedido">Pedido para Sylvie</label>
+                <button id="adjuntar" class="boton-clip" type="button" aria-label="Adjuntar archivos de la bandeja" title="Adjuntar (o arrastra archivos aquí)">
+                  <svg viewBox="0 0 24 24"><path d="M20 11.5 12.4 19a5 5 0 0 1-7.1-7.1l8-8a3.3 3.3 0 0 1 4.7 4.7l-7.9 7.9a1.7 1.7 0 0 1-2.4-2.4l7.1-7.1"></path></svg>
+                </button>
                 <textarea id="pedido" rows="2" placeholder="Pídele algo a Sylvie… (Enter para enviar, Mayús+Enter para otra línea)"></textarea>
                 <button id="cancelar-pedido" class="boton-sec" type="button" hidden>Cancelar</button>
                 <button id="enviar-pedido" class="boton-envio" type="submit" aria-label="Enviar pedido">

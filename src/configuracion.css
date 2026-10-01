@@ -185,3 +185,32 @@ input[type="number"] { width: 64px; text-align: center; }
 .app .letra.doble { font-size: 12px; letter-spacing: -0.02em; }
 .campo-fila.varios { align-items: flex-start; }
 .campo-fila .campos { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+
+/* Planner: código para iniciar sesión */
+.codigo-login { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: 30px; padding: 12px; border-radius: 12px; background: #101a15; border: 1px solid #2f4a3d; }
+.codigo-login .tenue { flex-basis: 100%; font-size: 12px; }
+.codigo-login .codigo { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 22px; letter-spacing: 0.12em; color: var(--acento); margin-right: auto; -webkit-user-select: text; user-select: text; }
+
+/* Música: YouTube */
+.extra-musica { border-top: 1px solid var(--borde); padding: 10px 14px 12px 60px; display: flex; flex-direction: column; gap: 8px; }
+.fila-youtube { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fila-youtube b { display: block; font-size: 12.5px; }
+.fila-youtube small { display: block; color: var(--tenue); font-size: 11.5px; }
+.ayuda-youtube { font-size: 12px; color: var(--tenue); }
+.ayuda-youtube summary { cursor: pointer; color: var(--acento); font-weight: 600; }
+.ayuda-youtube ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* Spotify / Planner: botón simple + opción avanzada */
+.login { padding: 12px 16px 14px; border-top: 1px solid var(--borde); display: flex; flex-direction: column; gap: 10px; }
+.login .codigo-login { margin-left: 0; }
+.login-simple { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.login-simple p { flex-basis: 100%; margin: 0; color: var(--suave); }
+.avanzado summary { cursor: pointer; color: var(--tenue); font-size: 12px; font-weight: 600; }
+.avanzado[open] summary { margin-bottom: 4px; }
+.avanzado .pasos-form { border-top: 0 !important; padding: 0 !important; }
+
+/* Direcciones para copiar (p. ej. el Redirect URI de Spotify) */
+.copiable { display: flex; align-items: center; gap: 6px; margin: 6px 0; padding: 4px 4px 4px 10px; border-radius: 9px; background: #0b0b0e; border: 1px solid var(--borde2); width: fit-content; max-width: 100%; }
+.copiable code { background: none; padding: 0; font-size: 12.5px; color: var(--texto); -webkit-user-select: all; user-select: all; overflow-wrap: anywhere; }
+.copiar { flex: none; height: 26px; padding: 0 10px; border-radius: 7px; border: 0; background: var(--acento); color: var(--acento-texto); font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.copiar.hecho { background: #2f4a3d; color: var(--acento); }

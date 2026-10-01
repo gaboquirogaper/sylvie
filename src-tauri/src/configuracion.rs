@@ -27,6 +27,8 @@ pub struct Ajustes {
     pub apariencia: String,
     /// Esquina de la mascota flotante: "abajo-der", "abajo-izq", "arriba-der" o "arriba-izq".
     pub esquina: String,
+    /// Buscar YouTube / YouTube Music en los navegadores.
+    pub youtube: bool,
 }
 
 pub const ESQUINAS: [&str; 4] = ["abajo-der", "abajo-izq", "arriba-der", "arriba-izq"];
@@ -39,6 +41,7 @@ impl Default for Ajustes {
             claude_apps: vec!["mcp__claude_ai_Notion".into()],
             apariencia: "notch".into(),
             esquina: "abajo-der".into(),
+            youtube: true,
         }
     }
 }
@@ -184,7 +187,9 @@ pub fn guardar_ajustes(app: AppHandle, ajustes: Ajustes) -> Result<Ajustes, Stri
         } else {
             "abajo-der".into()
         },
+        youtube: ajustes.youtube,
     };
+    crate::navegador::fijar_activo(ajustes.youtube);
     let antes = leer(&app);
     guardar(&app, &ajustes)?;
     let _ = app.emit("ajustes-cambiados", ());

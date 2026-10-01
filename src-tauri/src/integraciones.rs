@@ -12,7 +12,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{calendario, claude, configuracion, secretos};
+use crate::{calendario, claude, configuracion, planner, secretos};
 
 const CUENTA_CALENDARIO: &str = "calendario-ical";
 const CUENTA_CLICKUP: &str = "clickup-token";
@@ -25,7 +25,11 @@ const API_ASANA: &str = "https://app.asana.com/api/1.0";
 const MAX_TAREAS: usize = 40;
 
 /// Sitios que Sylvie puede abrir en el navegador.
-const HOSTS_PERMITIDOS: [&str; 9] = [
+const HOSTS_PERMITIDOS: [&str; 13] = [
+    "developer.spotify.com",
+    "planner.cloud.microsoft",
+    "microsoft.com",
+    "entra.microsoft.com",
     "trello.com",
     "calendar.notion.so",
     "calendar.google.com",
@@ -71,6 +75,8 @@ pub fn estado_conexiones() -> Result<Vec<EstadoApp>, String> {
         EstadoApp { id: "clickup", conectada: secretos::leer(CUENTA_CLICKUP)?.is_some() },
         EstadoApp { id: "asana", conectada: secretos::leer(CUENTA_ASANA)?.is_some() },
         EstadoApp { id: "trello", conectada: secretos::leer(CUENTA_TRELLO)?.is_some() },
+        EstadoApp { id: "planner", conectada: planner::conectado()? },
+        EstadoApp { id: "spotify", conectada: crate::spotify::conectado()? },
     ])
 }
 
@@ -114,7 +120,13 @@ pub async fn conectar_app(app: AppHandle, id: String, valor: String) -> Result<S
 
 #[tauri::command]
 pub fn desconectar_app(app: AppHandle, id: String) -> Result<(), String> {
-    secretos::borrar(cuenta(&id)?)?;
+    if id == "planner" {
+        planner::desconectar()?;
+    } else if id == "spotify" {
+        crate::spotify::desconectar()?;
+    } else {
+        secretos::borrar(cuenta(&id)?)?;
+    }
     let _ = app.emit("conexiones-cambiadas", ());
     Ok(())
 }
@@ -142,6 +154,12 @@ pub struct Tarea {
     /// Lista o proyecto donde está.
     lugar: String,
     url: String,
+}
+
+impl Tarea {
+    pub fn nueva(app: &'static str, titulo: &str, vence: Option<String>, lugar: String, url: &str) -> Tarea {
+        Tarea { app, titulo: titulo.to_string(), vence, lugar, url: url.to_string() }
+    }
 }
 
 #[derive(Serialize)]
@@ -320,6 +338,12 @@ pub async fn tareas_pendientes() -> Result<Tareas, String> {
             Err(e) => errores.push(e),
         }
     }
+    if planner::conectado()? {
+        match planner::tareas().await {
+            Ok(t) => tareas.extend(t),
+            Err(e) => errores.push(e),
+        }
+    }
     if let Some(guardado) = secretos::leer(CUENTA_TRELLO)? {
         match tareas_trello(&guardado).await {
             Ok(t) => tareas.extend(t),
@@ -488,7 +512,7 @@ fn corriendo(proceso: &str) -> bool {
 }
 
 /// Botones del notch: abre la app de escritorio (o su web si no está instalada).
-/// Solo acepta: "notion", "musica", "calendario", "notion-calendar", "clickup", "asana", "trello".
+/// Solo acepta: "notion", "musica", "calendario", "notion-calendar", "clickup", "asana", "trello", "planner".
 #[tauri::command]
 pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
     let web = match cual.as_str() {
@@ -499,6 +523,7 @@ pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
         "asana" => "https://app.asana.com",
         "trello" => "https://trello.com",
         "notion-calendar" => "https://calendar.notion.so",
+        "planner" => "https://planner.cloud.microsoft",
         _ => return Err("No conozco esa app.".into()),
     };
 
@@ -530,4 +555,19 @@ pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
     app.opener()
         .open_url(web, None::<&str>)
         .map_err(|e| format!("No pude abrir la app: {e}"))
+}
+
+#[derive(Serialize)]
+pub struct LoginsListos {
+    spotify: bool,
+    planner: bool,
+}
+
+/// ¿Sylvie trae sus propios IDs? (Si sí, basta con pulsar «Conectar».)
+#[tauri::command]
+pub fn logins_listos() -> LoginsListos {
+    LoginsListos {
+        spotify: !crate::claves_publicas::SPOTIFY_CLIENT_ID.is_empty(),
+        planner: !crate::claves_publicas::MICROSOFT_CLIENT_ID.is_empty(),
+    }
 }

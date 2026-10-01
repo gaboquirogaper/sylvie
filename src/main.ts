@@ -7,17 +7,27 @@ import { Mascota, type EstadoMascota } from "./mascota";
 // ══ Tipos ═══════════════════════════════════════════════════════
 type Modo = "compacta" | "hover" | "abierta" | "toast" | "cancion" | "aturdida" | "comer";
 type Pestana = "bienvenida" | "inicio" | "claude" | "bandeja" | "conexiones";
-type Toast = null | "aviso" | "listo" | "cancion" | "aturdida" | "reunion";
+type Toast = null | "aviso" | "listo" | "cancion" | "aturdida" | "reunion" | "airdrop";
 type Segmento = "notion" | "calendario" | "tareas";
 type Evento = { titulo: string; inicio: string; fin: string; todo_el_dia: boolean; enlace: string | null; lugar: string | null };
-type Tarea = { app: "clickup" | "asana" | "trello"; titulo: string; vence: string | null; lugar: string; url: string };
+type Tarea = { app: "clickup" | "asana" | "trello" | "planner"; titulo: string; vence: string | null; lugar: string; url: string };
 type Tareas = { tareas: Tarea[]; errores: string[] };
 type EstadoApp = { id: string; conectada: boolean };
 type Aviso = { clave: string; base: string; titulo: string; url: string; tipo: "nuevo" | "modificado"; editado: string };
 type Entrada = { fecha: string; pedido: string; resultado: string; ok: boolean };
 type Progreso = { tipo: "paso" | "texto"; texto: string };
 type Fin = { ok: boolean; resultado: string; segundos: number };
-type Cancion = { app: string; reproduciendo: boolean; titulo: string; artista: string; posicion: number; duracion: number; clave: string } | null;
+type Cancion = {
+  app: string;
+  reproduciendo: boolean;
+  titulo: string;
+  artista: string;
+  posicion: number;
+  duracion: number;
+  clave: string;
+  /** false = YouTube sin el permiso del navegador: se ve, pero no se controla. */
+  control: boolean;
+} | null;
 
 // ══ Medidas (la ventana mide 760 de ancho: tauri.conf.json) ═════
 const ANCHO_VENTANA = 760;
@@ -44,10 +54,10 @@ const DORMIR_TRAS_SEG = 5 * 60; // 5 minutos sin tocar la Mac
 const MAX_AVISOS = 30;
 const GRACIA_BANDEJA_MS = 12_000; // con la Bandeja abierta: tiempo para ir al Finder y volver arrastrando
 const AVISO_REUNION_MIN = 5; // avisar la reunión 5 minutos antes
-const COLOR_TAREA: Record<Tarea["app"], string> = { clickup: "#c9a0ff", asana: "#ff9e9e", trello: "#5ab4f0" };
-const NOMBRE_TAREA: Record<Tarea["app"], string> = { clickup: "ClickUp", asana: "Asana", trello: "Trello" };
+const COLOR_TAREA: Record<Tarea["app"], string> = { clickup: "#c9a0ff", asana: "#ff9e9e", trello: "#5ab4f0", planner: "#b5e48c" };
+const NOMBRE_TAREA: Record<Tarea["app"], string> = { clickup: "ClickUp", asana: "Asana", trello: "Trello", planner: "Planner" };
 
-const PLATAFORMAS: Record<string, string> = { Spotify: "#1db954", "Apple Music": "#fa3d5a" };
+const PLATAFORMAS: Record<string, string> = { Spotify: "#1db954", "Apple Music": "#fa3d5a", YouTube: "#ff0033", "YouTube Music": "#ff0033" };
 const NOTA_SVG = '<svg viewBox="0 0 24 24"><path d="M9 17.5a3 3 0 1 1-2-2.83V5l12-2v11.5a3 3 0 1 1-2-2.83V7.2L9 8.6z"></path></svg>';
 const ICONOS = {
   favorito: '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"></path></svg>',
@@ -184,7 +194,7 @@ function actualizar() {
   modo = nuevo;
   document.body.dataset.modo = modo;
 
-  const t = TAMANOS[modo];
+  const t = modo === "compacta" && estadoAirDrop ? { w: 304, h: 44, r: 16 } : TAMANOS[modo];
   notch.style.width = `${t.w}px`;
   notch.style.height = `${t.h}px`;
   notch.style.borderRadius = apariencia === "flotante" ? "24px" : `0 0 ${t.r}px ${t.r}px`;
@@ -559,13 +569,13 @@ function dibujarTareas() {
   );
   const p = $("#sin-tareas");
   p.hidden = tareas.length > 0 && erroresTareas.length === 0;
-  if (!hayTareasConectadas()) vacio(p, "Conecta ClickUp, Asana o Trello para ver tus tareas pendientes.", true);
+  if (!hayTareasConectadas()) vacio(p, "Conecta ClickUp, Asana, Trello o Planner para ver tus tareas pendientes.", true);
   else if (erroresTareas.length) vacio(p, erroresTareas.join(" "));
   else vacio(p, "No tienes tareas pendientes. ¡Bien!");
   dibujarResumen();
 }
 
-const hayTareasConectadas = () => !!(conexiones.clickup || conexiones.asana || conexiones.trello);
+const hayTareasConectadas = () => !!(conexiones.clickup || conexiones.asana || conexiones.trello || conexiones.planner);
 
 async function cargarTareas() {
   if (!hayTareasConectadas()) {
@@ -612,6 +622,10 @@ function crearControles() {
         e.stopPropagation();
         if (!cancion) return;
         if (accion === "favorito") {
+          if (favorita === null && cancion.app === "Spotify") {
+            invoke("abrir_configuracion", { seccion: "conexiones" }); // falta conectar Spotify
+            return;
+          }
           favorita = await invoke<boolean | null>("favorito_musica", { appMusica: cancion.app, cambiar: true }).catch(() => favorita);
           dibujarMusica();
           return;
@@ -630,7 +644,12 @@ function crearControles() {
 
 function dibujarMusica() {
   const titulo = cancion?.titulo ?? "Nada sonando";
-  const artista = cancion ? [cancion.artista, cancion.app].filter(Boolean).join(" · ") : "Abre Spotify o Música";
+  const sinControl = !!cancion && cancion.control === false;
+  const artista = !cancion
+    ? "Abre Spotify, Música o YouTube"
+    : sinControl
+      ? `${cancion.app} · sin control (ver Ajustes → Música)`
+      : [cancion.artista, cancion.app].filter(Boolean).join(" · ");
   $("#inicio-titulo").textContent = titulo;
   $("#inicio-artista").textContent = artista;
   $("#cancion-titulo").textContent = titulo;
@@ -649,10 +668,17 @@ function dibujarMusica() {
   });
   document.querySelectorAll<HTMLButtonElement>(".controles .favorito").forEach((b) => {
     b.classList.toggle("on", favorita === true);
-    b.disabled = favorita === null;
-    b.title = favorita === null ? "Favoritos solo está disponible con Apple Music" : "Guardar en favoritos";
+    const spotifySinConectar = favorita === null && cancion?.app === "Spotify";
+    b.disabled = favorita === null && !spotifySinConectar;
+    b.classList.toggle("apagado", spotifySinConectar);
+    b.title = spotifySinConectar
+      ? "Conecta Spotify en Ajustes → Conexiones para guardar en «Tus me gusta»"
+      : favorita === null
+        ? "No disponible para esta app"
+        : "Guardar en favoritos";
   });
   document.querySelectorAll<HTMLSpanElement>(".controles").forEach((g) => (g.style.visibility = cancion ? "visible" : "hidden"));
+  document.querySelectorAll<HTMLButtonElement>(".controles button:not(.favorito)").forEach((b) => (b.disabled = sinControl));
   dibujarProgreso();
 }
 
@@ -669,7 +695,7 @@ function dibujarProgreso() {
     if (!moviendoBarra) barra.value = String(pct);
     const p = moviendoBarra ? Number(barra.value) : pct;
     barra.style.background = `linear-gradient(to right, #f4f4f6 ${p}%, #2a2b33 ${p}%)`;
-    barra.disabled = !cancion;
+    barra.disabled = !cancion || cancion.control === false;
     $(`#${id}-actual`).textContent = reloj(moviendoBarra ? (p / 100) * dur : posicion);
     $(`#${id}-total`).textContent = reloj(dur);
   }
@@ -686,6 +712,7 @@ function precargar(url: string) {
   });
 }
 
+let ultimaClaveConPortada = ""; // de qué canción es la portada que se ve ahora
 let cargaPortada = 0; // cada carga tiene su número; solo la última puede tocar la portada
 
 /**
@@ -704,9 +731,13 @@ async function cargarPortada(clave: string) {
       if (url) i.src = url;
       i.hidden = !url; // sin portada (p. ej. un podcast): se ve la carátula de Sylvie
     });
+    ultimaClaveConPortada = url ? clave : "";
   };
   if (!clave) return terminar(null);
 
+  // Si cambió de app (p. ej. de Spotify a YouTube), la portada anterior no sirve ni atenuada.
+  const appDe = (c: string) => c.split("|")[0];
+  if (appDe(clave) !== appDe(ultimaClaveConPortada)) imgs.forEach((i) => (i.hidden = true));
   document.body.classList.add("portada-cargando");
   for (const espera of [0, 700, 1500, 3000]) {
     if (espera) await dormir(espera);
@@ -812,21 +843,106 @@ function prepararConversacion(pedido: string) {
   $("#bienvenida-chat").hidden = true;
 }
 
+// ══ Adjuntos para Claude (archivos arrastrados o de la bandeja, y texto largo pegado) ══
+const MAX_ADJUNTOS = 5;
+const LARGO_PEGADO = 1500; // al pegar más que esto, se adjunta como archivo de texto
+let adjuntos: string[] = [];
+let pegado: string | null = null;
+
+function agregarAdjuntos(rutas: string[]) {
+  const nuevos = rutas.filter((r) => !adjuntos.includes(r));
+  adjuntos = [...adjuntos, ...nuevos].slice(0, MAX_ADJUNTOS);
+  if (adjuntos.length + nuevos.length > MAX_ADJUNTOS) mostrarNota(`Máximo ${MAX_ADJUNTOS} archivos por pedido.`);
+  dibujarAdjuntos();
+}
+
+function mostrarNota(texto: string) {
+  const c = $("#comentario");
+  c.textContent = texto;
+  c.hidden = false;
+}
+
+function chip(texto: string, quitar: () => void) {
+  const c = el("span", "chip-adjunto");
+  c.append(el("span", "", texto));
+  const x = el("button", "", "×");
+  x.type = "button";
+  x.setAttribute("aria-label", `Quitar ${texto}`);
+  x.addEventListener("click", () => {
+    quitar();
+    dibujarAdjuntos();
+  });
+  c.append(x);
+  return c;
+}
+
+function dibujarAdjuntos() {
+  const caja = $("#adjuntos");
+  const chips = adjuntos.map((r) => chip(`📎 ${nombreArchivo(r)}`, () => (adjuntos = adjuntos.filter((x) => x !== r))));
+  if (pegado) chips.push(chip(`📝 Texto pegado (${pegado.length.toLocaleString("es")} caracteres)`, () => (pegado = null)));
+  caja.replaceChildren(...chips);
+  caja.hidden = chips.length === 0;
+  $("#adjuntar").classList.toggle("activo", chips.length > 0);
+}
+
+function dibujarMenuAdjuntar() {
+  const menu = $("#menu-adjuntar");
+  if (!bandeja.length) {
+    menu.replaceChildren(el("span", "t-mini", "Arrastra archivos a esta pestaña o a la Bandeja para adjuntarlos."));
+    return;
+  }
+  menu.replaceChildren(
+    el("span", "t-mini", "De la bandeja:"),
+    ...bandeja.map((r) => {
+      const b = el("button", adjuntos.includes(r) ? "elegido" : "", nombreArchivo(r));
+      b.type = "button";
+      b.addEventListener("click", () => {
+        if (adjuntos.includes(r)) adjuntos = adjuntos.filter((x) => x !== r);
+        else agregarAdjuntos([r]);
+        dibujarAdjuntos();
+        dibujarMenuAdjuntar();
+      });
+      return b;
+    }),
+  );
+}
+
+$("#adjuntar").addEventListener("click", () => {
+  const menu = $("#menu-adjuntar");
+  menu.hidden = !menu.hidden;
+  if (!menu.hidden) dibujarMenuAdjuntar();
+});
+
+$<HTMLTextAreaElement>("#pedido").addEventListener("paste", (e) => {
+  const texto = e.clipboardData?.getData("text/plain") ?? "";
+  if (texto.length <= LARGO_PEGADO) return;
+  e.preventDefault(); // un texto muy largo no entra cómodo en la cajita: va como adjunto
+  pegado = texto;
+  dibujarAdjuntos();
+});
+
 async function enviarPedido() {
   const campo = $<HTMLTextAreaElement>("#pedido");
   const texto = campo.value.trim();
-  if (!texto || estadoPedido === "trabajando") return;
+  const hayAdjuntos = adjuntos.length > 0 || !!pegado;
+  if ((!texto && !hayAdjuntos) || estadoPedido === "trabajando") return;
+  const conAdjuntos = { adjuntos: [...adjuntos], pegado };
+  adjuntos = [];
+  pegado = null;
+  $("#menu-adjuntar").hidden = true;
+  dibujarAdjuntos();
   estadoPedido = "trabajando";
   pasos = [];
   campo.value = "";
   campo.disabled = true;
   $<HTMLButtonElement>("#enviar-pedido").disabled = true;
   $("#cancelar-pedido").hidden = false;
-  prepararConversacion(texto);
+  const n = conAdjuntos.adjuntos.length + (conAdjuntos.pegado ? 1 : 0);
+  prepararConversacion([texto || "Revisa lo que te adjunto.", n ? `📎 ${n} adjunto${n === 1 ? "" : "s"}` : ""].filter(Boolean).join("\n"));
   dibujarPasos();
   actualizar();
   try {
-    await invoke("enviar_pedido", { texto });
+    await invoke("enviar_pedido", { texto, ...conAdjuntos });
   } catch (error) {
     terminarPedido(false, String(error));
   }
@@ -915,7 +1031,7 @@ function dibujarConexiones() {
         boton.textContent = "En tu Mac ✓";
         boton.className = "conectada";
         boton.addEventListener("click", () => invoke("abrir_app", { cual: "musica" }));
-        tarjeta.title = "Spotify y Apple Music. YouTube y YouTube Music: próximamente";
+        tarjeta.title = "Spotify, Apple Music, YouTube y YouTube Music";
       } else if (a.id === "mas") {
         boton.textContent = "Ver";
         boton.className = "conectada";
@@ -940,6 +1056,15 @@ async function actualizarConexiones() {
   dibujarConexiones();
   cargarCalendario();
   cargarTareas();
+  // Si se acaba de conectar Spotify, el corazón ya sirve.
+  if (cancion) {
+    invoke<boolean | null>("favorito_musica", { appMusica: cancion.app, cambiar: false })
+      .then((f) => {
+        favorita = f;
+        dibujarMusica();
+      })
+      .catch(() => {});
+  }
 }
 
 // ══ Caritas-botón del notch compacto ═══════════════════════════
@@ -962,6 +1087,7 @@ $("#m-panel-btn").addEventListener("click", () => registrarToque());
 $("#cerrar").addEventListener("click", () => cerrar(true));
 $("#capa-toast").addEventListener("click", () => {
   if (toast === "listo") abrir("claude");
+  else if (toast === "airdrop") abrir("bandeja");
   else if (toast === "reunion" && reunionToast?.enlace) {
     invoke("abrir_enlace", { url: reunionToast.enlace }).catch(console.error);
     toast = null;
@@ -992,11 +1118,38 @@ $<HTMLTextAreaElement>("#pedido").addEventListener("keydown", (e) => {
 });
 $("#cancelar-pedido").addEventListener("click", () => invoke("cancelar_pedido"));
 
+// ══ AirDrop: barrita delgada en el notch mientras se envía ═════
+let estadoAirDrop: null | "enviando" | "enviado" = null;
+let tAirDrop: number | undefined;
+
+function fijarAirDrop(estado: typeof estadoAirDrop) {
+  estadoAirDrop = estado;
+  document.body.classList.toggle("airdrop-enviando", estado === "enviando");
+  document.body.classList.toggle("airdrop-enviado", estado === "enviado");
+  window.clearTimeout(tAirDrop);
+  if (estado === "enviado") tAirDrop = window.setTimeout(() => fijarAirDrop(null), 2500);
+  zonaPendiente = true; // el notch cambia de alto
+  actualizar();
+}
+
+listen<{ estado: "enviado" | "cancelado" | "error"; mensaje: string }>("airdrop", ({ payload }) => {
+  $("#mensaje-bandeja").textContent = payload.mensaje;
+  if (payload.estado === "cancelado") return fijarAirDrop(null);
+  fijarAirDrop(payload.estado === "enviado" ? "enviado" : null);
+  if (payload.estado === "enviado") felizHasta = Date.now() + 4000;
+  $("#toast-titulo").textContent = payload.estado === "enviado" ? "¡Listo!" : "AirDrop";
+  $("#toast-cuerpo").textContent = payload.mensaje;
+  $("#toast-accion").textContent = "Ver";
+  mostrarToast("airdrop");
+});
+
 $("#enviar-airdrop").addEventListener("click", async () => {
   if (!bandeja.length) return;
   try {
     await invoke("enviar_por_airdrop", { rutas: bandeja });
-    $("#mensaje-bandeja").textContent = "Abriendo AirDrop…";
+    $("#mensaje-bandeja").textContent = "Elige a quién enviarlo en la ventana de AirDrop…";
+    fijarAirDrop("enviando");
+    cerrar(); // se achica y queda la barrita mientras se envía
   } catch (error) {
     $("#mensaje-bandeja").textContent = String(error);
   }
@@ -1012,13 +1165,13 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && abierta) cerrar(true);
 });
 
-// Al hacer clic fuera, el panel se cierra… salvo en la Bandeja: ahí esperamos un rato,
+// Al hacer clic fuera, el panel se cierra… salvo en la Bandeja y en Claude: ahí esperamos un rato,
 // para que puedas ir al Finder, agarrar un archivo y volver arrastrándolo.
 let tGracia: number | undefined;
 function cerrarTrasGracia() {
   window.clearTimeout(tGracia);
   tGracia = window.setTimeout(() => {
-    if (!abierta || pestana !== "bandeja") return;
+    if (!abierta || (pestana !== "bandeja" && pestana !== "claude")) return;
     if (mouseDentro || arrastrando || comiendo) cerrarTrasGracia();
     else cerrar();
   }, GRACIA_BANDEJA_MS);
@@ -1027,7 +1180,7 @@ function cerrarTrasGracia() {
 getCurrentWindow().onFocusChanged(({ payload: enfocada }) => {
   window.clearTimeout(tGracia);
   if (enfocada || !abierta || arrastrando || comiendo || pestana === "bienvenida") return;
-  if (pestana === "bandeja") cerrarTrasGracia();
+  if (pestana === "bandeja" || pestana === "claude") cerrarTrasGracia();
   else cerrar();
 });
 
@@ -1053,7 +1206,29 @@ function claseVolador(clase: "tiembla" | "tragado", etiqueta?: string) {
   }
 }
 
+/** ¿El archivo que se arrastra va a Claude (pestaña Claude abierta) en vez de a la bandeja? */
+let arrastreParaClaude = false;
+
 getCurrentWebview().onDragDropEvent(({ payload }) => {
+  if (payload.type === "enter" && abierta && pestana === "claude" && estadoPedido !== "trabajando") {
+    arrastreParaClaude = true;
+    arrastrando = true;
+    document.body.classList.add("arrastrando");
+    actualizar();
+    return;
+  }
+  if (arrastreParaClaude && (payload.type === "leave" || payload.type === "drop")) {
+    arrastreParaClaude = false;
+    arrastrando = false;
+    document.body.classList.remove("arrastrando");
+    if (payload.type === "drop") {
+      agregarAdjuntos(payload.paths);
+      felizHasta = Date.now() + 2500;
+      $<HTMLTextAreaElement>("#pedido").focus();
+    }
+    actualizar();
+    return;
+  }
   if (payload.type === "enter") {
     arrastrando = true;
     comiendo = "encima";

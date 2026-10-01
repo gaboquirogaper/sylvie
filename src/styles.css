@@ -390,3 +390,32 @@ body.flotante[data-esquina$="der"] #notch::after { right: 40px; }
 body.flotante[data-esquina$="izq"] #notch::after { left: 40px; }
 body.flotante[data-esquina^="abajo"] #notch::after { bottom: -8px; border-top: 0; border-left: 0; }
 body.flotante[data-esquina^="arriba"] #notch::after { top: -8px; border-bottom: 0; border-right: 0; }
+
+/* ══ Adjuntos en la pestaña Claude ══════════════════════════════ */
+.adjuntos { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-adjunto { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; height: 24px; padding: 0 4px 0 9px; border-radius: 999px; background: #1f2a25; border: 1px solid #2f4a3d; color: var(--suave); font-size: 11.5px; }
+.chip-adjunto span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-adjunto button { width: 18px; height: 18px; border: 0; border-radius: 50%; background: none; color: var(--tenue); font-size: 13px; line-height: 1; cursor: pointer; }
+.chip-adjunto button:hover { background: #2a3a33; color: var(--texto); }
+.menu-adjuntar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border-radius: 12px; background: var(--campo); border: 1px solid var(--borde2); }
+.menu-adjuntar button { height: 24px; max-width: 180px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--borde2); background: none; color: var(--suave); font: inherit; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.menu-adjuntar button.elegido { border-color: var(--acento); color: var(--acento); }
+.boton-clip { width: 34px; height: 36px; flex: none; border: 0; border-radius: 12px; background: none; color: var(--tenue); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.boton-clip:hover, .boton-clip.activo { color: var(--acento); background: #1a1b21; }
+body.arrastrando #v-claude .tarjeta.chat { outline: 2px dashed var(--acento); outline-offset: -2px; }
+
+/* ══ AirDrop: barrita delgada mientras se envía ═════════════════ */
+.barra-airdrop { position: absolute; left: 52px; right: 52px; bottom: 3px; height: 3px; border-radius: 2px; background: #22232b; overflow: hidden; opacity: 0; transition: opacity 0.25s ease; pointer-events: none; z-index: 2; }
+.barra-airdrop i { position: absolute; top: 0; bottom: 0; left: 0; width: 35%; border-radius: 2px; background: #5ab4f0; }
+body.airdrop-enviando .barra-airdrop, body.airdrop-enviado .barra-airdrop { opacity: 1; }
+body.airdrop-enviando .barra-airdrop i { animation: airdrop-va 1.3s ease-in-out infinite; }
+body.airdrop-enviado .barra-airdrop i { width: 100%; background: var(--acento); transition: width 0.3s ease; }
+@keyframes airdrop-va { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+/* Solo en el notch cerrado (o bajo la mascota flotante) */
+body:not([data-modo="compacta"]):not([data-modo="hover"]) #notch .barra-airdrop { display: none; }
+#flotante .barra-airdrop { left: 18px; right: 18px; bottom: -4px; }
+body:not(.flotante) #flotante .barra-airdrop { display: none; }
+
+.controles button:disabled { opacity: 0.3; cursor: default; }
+.controles button:disabled:hover { background: none; }
+.controles .favorito.apagado { opacity: 0.45; }

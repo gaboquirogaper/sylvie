@@ -12,20 +12,27 @@
 //! - archivos       → bandeja de archivos del notch y AirDrop
 //! - sistema        → inactividad (para dormir) y desbloqueo de pantalla (para saludar)
 //! - calendario     → lee Google Calendar desde su dirección secreta iCal
-//! - integraciones  → conectar Calendar / ClickUp / Asana, conectores de Claude, abrir apps
+//! - integraciones  → conectar Calendar / ClickUp / Asana / Trello, conectores de Claude, abrir apps
+//! - planner        → Microsoft Planner (inicio de sesión con código)
+//! - spotify        → corazón de Spotify («Tus me gusta») con la API web oficial
+//! - navegador      → YouTube / YouTube Music en Chrome, Brave, Edge y Safari
 
 mod archivos;
 mod avisos;
 mod bandeja;
 mod calendario;
+mod claves_publicas;
 mod claude;
 mod configuracion;
 mod integraciones;
 mod musica;
+mod navegador;
 mod notch;
 mod notion;
+mod planner;
 mod secretos;
 mod sistema;
+mod spotify;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,6 +48,8 @@ pub fn run() {
         .manage(claude::EstadoClaude::default())
         .manage(musica::EstadoMusica::default())
         .manage(configuracion::SeccionPendiente::default())
+        .manage(planner::EstadoPlanner::default())
+        .manage(spotify::EstadoSpotify::default())
         .invoke_handler(tauri::generate_handler![
             notch::fijar_zonas,
             notch::soltar_mascota,
@@ -80,6 +89,11 @@ pub fn run() {
             integraciones::permitir_conector,
             integraciones::abrir_enlace,
             integraciones::abrir_app,
+            integraciones::logins_listos,
+            planner::planner_iniciar,
+            planner::planner_cancelar,
+            spotify::spotify_iniciar,
+            spotify::spotify_cancelar,
         ])
         .setup(|app| {
             // En Mac: sin ícono en el Dock; Sylvie vive en la barra de menú.
@@ -89,6 +103,7 @@ pub fn run() {
             bandeja::crear(app.handle())?;
             notch::iniciar(app.handle())?;
             avisos::iniciar(app.handle().clone());
+            navegador::fijar_activo(configuracion::leer(app.handle()).youtube);
             musica::iniciar(app.handle().clone());
             sistema::escuchar_desbloqueo(app.handle().clone());
             Ok(())

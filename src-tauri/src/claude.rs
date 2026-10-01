@@ -86,18 +86,28 @@ pub fn nombre_conector(prefijo: &str) -> String {
 }
 
 /// Envuelve el pedido con instrucciones y la fecha de hoy (para entender "el viernes").
-fn preparar_pedido(texto: &str, apps: &[String]) -> String {
+fn preparar_pedido(texto: &str, apps: &[String], adjuntos: &[String]) -> String {
     let ahora = Local::now();
     let nombres: Vec<String> = apps.iter().map(|p| nombre_conector(p)).collect();
+    let archivos = if adjuntos.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\nArchivos adjuntos por el usuario (están en la carpeta adjuntos/ de tu directorio actual; \
+léelos con la herramienta Read antes de responder): {}",
+            adjuntos.iter().map(|n| format!("adjuntos/{n}")).collect::<Vec<_>>().join(", ")
+        )
+    };
     format!(
         "Eres Sylvie, una asistente que trabaja con las apps del usuario ({}). \
 Reglas: usa solo las herramientas de esas apps; responde en español, en una o dos frases, \
 sin tablas ni encabezados; si falta información importante o algo es ambiguo, dilo en vez de inventar. \
-Fecha y hora actual: {} ({}).\n\nPedido: {}",
+Fecha y hora actual: {} ({}).\n\nPedido: {}{}",
         nombres.join(", "),
         ahora.format("%Y-%m-%d %H:%M %:z"),
         ahora.format("%A"),
-        texto.trim()
+        texto.trim(),
+        archivos
     )
 }
 
@@ -114,6 +124,10 @@ fn describir_herramienta(nombre: &str, entrada: &Value) -> String {
         }
         return match nombre {
             "ToolSearch" => "Preparando las herramientas…".into(),
+            "Read" => match entrada["file_path"].as_str().and_then(|r| r.rsplit('/').next()) {
+                Some(archivo) => format!("Leyendo «{archivo}»…"),
+                None => "Leyendo el archivo adjunto…".into(),
+            },
             _ => "Pensando…".into(),
         };
     };
@@ -249,7 +263,7 @@ fn interpretar(app: &AppHandle, linea: &str, ultimo_texto: &mut String) -> Optio
 
 // ── Ejecución ───────────────────────────────────────────────────
 
-async fn ejecutar(app: &AppHandle, texto: &str) -> Result<String, String> {
+async fn ejecutar(app: &AppHandle, texto: &str, adjuntos: &[String]) -> Result<String, String> {
     // Carpeta vacía propia: así Claude Code no lee proyectos ni archivos de otros lados.
     let carpeta = configuracion::ruta(app, "espacio-claude")?;
     fs::create_dir_all(&carpeta).map_err(|e| format!("No pude preparar la carpeta de trabajo: {e}"))?;
@@ -264,7 +278,7 @@ async fn ejecutar(app: &AppHandle, texto: &str) -> Result<String, String> {
     // --allowedTools recibe una lista: cada conector va como un valor aparte (al final del comando).
     let mut hijo = Command::new(ruta_claude())
         .arg("-p")
-        .arg(preparar_pedido(texto, &apps))
+        .arg(preparar_pedido(texto, &apps, adjuntos))
         .args(["--output-format", "stream-json", "--verbose", "--allowedTools"])
         .args(&apps)
         .current_dir(&carpeta)
@@ -361,19 +375,34 @@ fn agregar_al_historial(app: &AppHandle, entrada: Entrada) {
 /// Envía un pedido. Responde enseguida; el progreso llega con "claude-progreso"
 /// y el final con "claude-fin".
 #[tauri::command]
-pub async fn enviar_pedido(app: AppHandle, texto: String) -> Result<(), String> {
+pub async fn enviar_pedido(
+    app: AppHandle,
+    texto: String,
+    adjuntos: Option<Vec<String>>,
+    pegado: Option<String>,
+) -> Result<(), String> {
     let texto = texto.trim().to_string();
-    if texto.is_empty() {
+    let adjuntos = adjuntos.unwrap_or_default();
+    let pegado = pegado.filter(|p| !p.trim().is_empty());
+    if texto.is_empty() && adjuntos.is_empty() && pegado.is_none() {
         return Err("Escribe un pedido.".into());
     }
+    let texto = if texto.is_empty() { "Revisa lo que te adjunto y dime qué es, en pocas palabras.".to_string() } else { texto };
     if app.state::<EstadoClaude>().ocupado.swap(true, Ordering::SeqCst) {
         return Err("Ya estoy trabajando en otro pedido.".into());
     }
+    let nombres = match preparar_adjuntos(&app, &adjuntos, pegado.as_deref()) {
+        Ok(n) => n,
+        Err(e) => {
+            app.state::<EstadoClaude>().ocupado.store(false, Ordering::SeqCst);
+            return Err(e);
+        }
+    };
 
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         let inicio = Instant::now();
-        let (ok, resultado) = match ejecutar(&app2, &texto).await {
+        let (ok, resultado) = match ejecutar(&app2, &texto, &nombres).await {
             Ok(r) => (true, r),
             Err(e) => (false, e),
         };
@@ -382,7 +411,7 @@ pub async fn enviar_pedido(app: AppHandle, texto: String) -> Result<(), String> 
             &app2,
             Entrada {
                 fecha: Local::now().to_rfc3339(),
-                pedido: texto,
+                pedido: if nombres.is_empty() { texto } else { format!("{texto} (📎 {})", nombres.len()) },
                 resultado: resultado.clone(),
                 ok,
             },
@@ -397,6 +426,60 @@ pub async fn enviar_pedido(app: AppHandle, texto: String) -> Result<(), String> 
         );
     });
     Ok(())
+}
+
+// ── Adjuntos ────────────────────────────────────────────────────
+
+const MAX_ADJUNTOS: usize = 5;
+const MAX_BYTES_ADJUNTO: u64 = 25 * 1024 * 1024;
+const MAX_PEGADO: usize = 200_000;
+
+/// Copia los adjuntos a espacio-claude/adjuntos/ (la única carpeta que Claude puede leer).
+/// Borra los del pedido anterior. Devuelve los nombres copiados.
+fn preparar_adjuntos(app: &AppHandle, rutas: &[String], pegado: Option<&str>) -> Result<Vec<String>, String> {
+    let carpeta = configuracion::ruta(app, "espacio-claude")?.join("adjuntos");
+    let _ = fs::remove_dir_all(&carpeta);
+    if rutas.is_empty() && pegado.is_none() {
+        return Ok(Vec::new());
+    }
+    fs::create_dir_all(&carpeta).map_err(|e| format!("No pude preparar los adjuntos: {e}"))?;
+    if rutas.len() > MAX_ADJUNTOS {
+        return Err(format!("Puedes adjuntar hasta {MAX_ADJUNTOS} archivos por pedido."));
+    }
+    let mut nombres = Vec::new();
+    for ruta in rutas {
+        let origen = PathBuf::from(ruta);
+        let datos = fs::metadata(&origen).map_err(|_| format!("No encontré «{ruta}».", ruta = nombre_de(&origen)))?;
+        if !datos.is_file() {
+            return Err(format!("«{}» es una carpeta; adjunta archivos sueltos.", nombre_de(&origen)));
+        }
+        if datos.len() > MAX_BYTES_ADJUNTO {
+            return Err(format!("«{}» es muy grande (máximo 25 MB).", nombre_de(&origen)));
+        }
+        // Nombre seguro y sin repetir.
+        let base: String = nombre_de(&origen)
+            .chars()
+            .map(|c| if c.is_alphanumeric() || ".-_ ".contains(c) { c } else { '_' })
+            .collect();
+        let mut nombre = base.clone();
+        let mut n = 2;
+        while nombres.contains(&nombre) {
+            nombre = format!("{n}-{base}");
+            n += 1;
+        }
+        fs::copy(&origen, carpeta.join(&nombre)).map_err(|e| format!("No pude copiar «{nombre}»: {e}"))?;
+        nombres.push(nombre);
+    }
+    if let Some(texto) = pegado {
+        let texto: String = texto.chars().take(MAX_PEGADO).collect();
+        fs::write(carpeta.join("texto-pegado.txt"), texto).map_err(|e| format!("No pude guardar el texto pegado: {e}"))?;
+        nombres.push("texto-pegado.txt".into());
+    }
+    Ok(nombres)
+}
+
+fn nombre_de(ruta: &std::path::Path) -> String {
+    ruta.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "archivo".into())
 }
 
 #[tauri::command]
