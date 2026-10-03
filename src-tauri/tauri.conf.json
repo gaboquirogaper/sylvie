@@ -36,10 +36,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "app",
-      "dmg"
-    ],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,7 +45,7 @@
       "icons/icon.ico"
     ],
     "category": "Productivity",
-    "shortDescription": "Sylvie, asistente en el notch",
+    "shortDescription": "Sylvie, tu asistente en el notch",
     "copyright": "© 2026 Gabo",
     "macOS": {
       "minimumSystemVersion": "12.0",

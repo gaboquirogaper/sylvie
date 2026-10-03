@@ -1,0 +1,14 @@
+name: 💡 Tengo una idea
+description: Propón una función o una mejora.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: ¿Qué te gustaría que haga Sylvie?
+    validations:
+      required: true
+  - type: textarea
+    id: para
+    attributes:
+      label: ¿Para qué te serviría?

@@ -25,3 +25,8 @@ dist-ssr
 
 # copias temporales
 .sylvie-*.tgz
+
+# Carpetas de trabajo locales
+Claude outputs/
+__pycache__/
+*.bundle

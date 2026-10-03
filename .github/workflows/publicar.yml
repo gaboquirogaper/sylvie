@@ -1,0 +1,72 @@
+# Arma los instaladores de Sylvie (Mac y Windows) y los deja en una "Release" de GitHub.
+#
+# Cómo usarlo:
+#   1. Sube el número de versión en src-tauri/tauri.conf.json (por ejemplo 0.4.0).
+#   2. git tag v0.4.0 && git push origin v0.4.0
+#      (o en GitHub: Actions → «Publicar versión» → Run workflow)
+#   3. En unos 15-20 minutos aparece un borrador en Releases con el .dmg y el .exe.
+#      Revísalo y pulsa «Publish release».
+name: Publicar versión
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compilar:
+    name: ${{ matrix.nombre }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: Mac (Apple Silicon)
+            sistema: macos-latest
+            args: --target aarch64-apple-darwin
+            rust: aarch64-apple-darwin
+          - nombre: Mac (Intel)
+            sistema: macos-latest
+            args: --target x86_64-apple-darwin
+            rust: x86_64-apple-darwin
+          - nombre: Windows
+            sistema: windows-latest
+            args: ""
+            rust: ""
+    runs-on: ${{ matrix.sistema }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Sylvie v__VERSION__"
+          releaseBody: |
+            ## Descargas
+            - **Mac con chip Apple (M1, M2, M3…):** `Sylvie_*_aarch64.dmg`
+            - **Mac con Intel:** `Sylvie_*_x64.dmg`
+            - **Windows 10/11:** `Sylvie_*_x64-setup.exe`
+
+            Primera vez en Mac: clic derecho en Sylvie → **Abrir**. En Windows: **Más información → Ejecutar de todas formas**.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

@@ -1,0 +1,32 @@
+name: 🐛 Algo no funciona
+description: Cuéntanos un error para arreglarlo.
+labels: ["error"]
+body:
+  - type: textarea
+    id: que
+    attributes:
+      label: ¿Qué pasó?
+      description: Qué hiciste, qué esperabas y qué pasó en cambio.
+    validations:
+      required: true
+  - type: dropdown
+    id: sistema
+    attributes:
+      label: Sistema
+      options:
+        - Mac con chip Apple
+        - Mac con Intel
+        - Windows 11
+        - Windows 10
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Sylvie
+      placeholder: "0.3.0"
+  - type: textarea
+    id: capturas
+    attributes:
+      label: Capturas (opcional)
+      description: Arrastra aquí una captura o un video corto. No incluyas tokens ni datos privados.

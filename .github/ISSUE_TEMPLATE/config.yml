@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Comunidad en Discord
+    # DISCORD: cambia esta dirección por tu enlace de invitación (por ejemplo https://discord.gg/xxxx)
+    url: https://github.com/gaboquirogaper/sylvie#-comunidad
+    about: Preguntas, ideas y charla con otras personas que usan Sylvie.
