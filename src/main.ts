@@ -1077,7 +1077,23 @@ function accionCarita(id: string) {
 
 // ══ Eventos de la interfaz ═════════════════════════════════════
 $("#capa-compacta").addEventListener("click", () => registrarToque(() => abrir()));
+// Iconitos pixel art propios de cada app (7×7; "#" = píxel encendido).
+const ICONOS_PIXEL: Record<string, string[]> = {
+  notion: ["#.....#", "##....#", "#.#...#", "#..#..#", "#...#.#", "#....##", "#.....#"], // una N
+  claude: [".#####.", "#######", "#.#.#.#", "#######", ".#####.", ".##....", ".#....."], // globito de chat
+  musica: ["...##..", "...#.#.", "...#..#", "...#...", ".###...", "####...", ".##...."], // nota musical
+  bandeja: [".#####.", "#.....#", "#.....#", "##...##", "#.###.#", "#.....#", "#######"], // bandeja
+};
+
+function svgPixel(filas: string[]) {
+  const cuadros = filas
+    .flatMap((fila, y) => [...fila].map((p, x) => (p === "#" ? `<rect x="${x}" y="${y}" width="1" height="1"/>` : "")))
+    .join("");
+  return `<svg viewBox="0 0 7 7" aria-hidden="true">${cuadros}</svg>`;
+}
+
 document.querySelectorAll<HTMLButtonElement>(".carita").forEach((c) => {
+  c.innerHTML = svgPixel(ICONOS_PIXEL[c.dataset.id!] ?? []);
   c.addEventListener("click", (e) => {
     e.stopPropagation(); // no cuenta como toque a Sylvie
     accionCarita(c.dataset.id!);
