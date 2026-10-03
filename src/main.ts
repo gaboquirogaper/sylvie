@@ -8,7 +8,8 @@ import { Mascota, type EstadoMascota } from "./mascota";
 type Modo = "compacta" | "hover" | "abierta" | "toast" | "cancion" | "aturdida" | "comer";
 type Pestana = "bienvenida" | "inicio" | "claude" | "bandeja" | "conexiones";
 type Toast = null | "aviso" | "listo" | "cancion" | "aturdida" | "reunion" | "airdrop";
-type Segmento = "notion" | "calendario" | "tareas";
+type Segmento = "notion" | "calendario" | "tareas" | "reservas";
+type Reserva = { origen: "calendly" | "contentboard"; titulo: string; invitado: string; email: string; inicio: string; fin: string; enlace: string | null };
 type Evento = { titulo: string; inicio: string; fin: string; todo_el_dia: boolean; enlace: string | null; lugar: string | null };
 type Tarea = { app: "clickup" | "asana" | "trello" | "planner"; titulo: string; vence: string | null; lugar: string; url: string };
 type Tareas = { tareas: Tarea[]; errores: string[] };
@@ -54,6 +55,8 @@ const DORMIR_TRAS_SEG = 5 * 60; // 5 minutos sin tocar la Mac
 const MAX_AVISOS = 30;
 const GRACIA_BANDEJA_MS = 12_000; // con la Bandeja abierta: tiempo para ir al Finder y volver arrastrando
 const AVISO_REUNION_MIN = 5; // avisar la reunión 5 minutos antes
+const COLOR_RESERVA: Record<Reserva["origen"], string> = { calendly: "#4f8cff", contentboard: "#ff9f6e" };
+const NOMBRE_RESERVA: Record<Reserva["origen"], string> = { calendly: "Calendly", contentboard: "contentBoard" };
 const COLOR_TAREA: Record<Tarea["app"], string> = { clickup: "#c9a0ff", asana: "#ff9e9e", trello: "#5ab4f0", planner: "#b5e48c" };
 const NOMBRE_TAREA: Record<Tarea["app"], string> = { clickup: "ClickUp", asana: "Asana", trello: "Trello", planner: "Planner" };
 
@@ -77,6 +80,8 @@ const APPS = [
   { id: "asana", nombre: "Asana", letra: "A", color: "#ff9e9e" },
   { id: "trello", nombre: "Trello", letra: "T", color: "#5ab4f0" },
   { id: "planner", nombre: "Planner", letra: "P", color: "#b5e48c" },
+  { id: "calendly", nombre: "Calendly", letra: "C", color: "#4f8cff" },
+  { id: "contentboard", nombre: "contentBoard", letra: "cB", color: "#ff9f6e" },
   { id: "saas", nombre: "Seed Studio", letra: "S", color: "#f5b971" },
   { id: "mas", nombre: "Agregar", letra: "+", color: "#3a3b45" },
 ];
@@ -139,6 +144,9 @@ let tareas: Tarea[] = [];
 let erroresTareas: string[] = [];
 const reunionesAvisadas = new Set<string>();
 let reunionToast: Evento | null = null;
+let reservas: Reserva[] = [];
+let erroresReservas: string[] = [];
+let clavesReservas: Set<string> | null = null; // null = todavía no se cargaron (no avisar las que ya existían)
 let avisos: Aviso[] = [];
 let sinLeer = 0;
 let cancion: Cancion = null;
@@ -415,7 +423,13 @@ function dibujarAvisos() {
 function dibujarResumen() {
   const hoy = eventosDelDia(new Date()).length;
   $("#resumen-derecha").textContent =
-    segmento === "notion" ? `${avisos.length} recientes` : segmento === "calendario" ? `${hoy} hoy` : `${tareas.length} pendientes`;
+    segmento === "notion"
+      ? `${avisos.length} recientes`
+      : segmento === "calendario"
+        ? `${hoy} hoy`
+        : segmento === "tareas"
+          ? `${tareas.length} pendientes`
+          : `${reservas.length} próximas`;
 }
 
 // ══ Calendario ════════════════════════════════════════════════
@@ -593,12 +607,101 @@ async function cargarTareas() {
   dibujarTareas();
 }
 
+// ══ Reservas (Calendly y contentBoard) ═════════════════════════
+const hayReservasConectadas = () => !!(conexiones.calendly || conexiones.contentboard);
+const claveReserva = (r: Reserva) => `${r.origen}|${r.inicio}|${r.email || r.invitado}`;
+
+function cuandoReserva(d: Date) {
+  const hoy = inicioDelDia(new Date());
+  const dias = Math.round((inicioDelDia(d).getTime() - hoy.getTime()) / 86_400_000);
+  const dia = dias === 0 ? "Hoy" : dias === 1 ? "Mañana" : d.toLocaleDateString("es", { weekday: "short", day: "numeric" });
+  return `${dia} · ${hora(d)}`;
+}
+
+function dibujarReservas() {
+  const ahora = new Date();
+  $("#lista-reservas").replaceChildren(
+    ...reservas.map((r) => {
+      const i = new Date(r.inicio);
+      const f = new Date(r.fin || r.inicio);
+      const enCurso = i <= ahora && f > ahora;
+      const pronto = i > ahora && i.getTime() - ahora.getTime() < 15 * 60_000;
+      const li = el("li", f <= ahora ? "evento pasado" : "evento");
+      const barra = el("span", enCurso ? "barrita en-curso" : "barrita");
+      barra.style.background = enCurso ? "" : COLOR_RESERVA[r.origen];
+      li.append(barra);
+      const col = el("span", "t-col");
+      col.append(
+        el("span", "t-titulo", r.invitado || r.titulo),
+        el("span", "t-mini", [cuandoReserva(i), r.invitado ? r.titulo : "", NOMBRE_RESERVA[r.origen]].filter(Boolean).join(" · ")),
+      );
+      col.title = r.email;
+      li.append(col);
+      if (r.enlace) {
+        const b = el("button", enCurso || pronto ? "unirse ya" : "unirse", enCurso || pronto ? "Unirse" : "Enlace");
+        b.type = "button";
+        b.addEventListener("click", () => invoke("abrir_enlace", { url: r.enlace }).catch(console.error));
+        li.append(b);
+      }
+      return li;
+    }),
+  );
+  const p = $("#sin-reservas");
+  p.hidden = reservas.length > 0 && erroresReservas.length === 0;
+  if (!hayReservasConectadas()) vacio(p, "Conecta Calendly o contentBoard para ver tus llamadas reservadas.", true);
+  else if (erroresReservas.length) vacio(p, erroresReservas.join(" "));
+  else vacio(p, "No hay llamadas reservadas en los próximos 14 días.");
+  dibujarResumen();
+}
+
+async function cargarReservas(forzar = false) {
+  if (!hayReservasConectadas()) {
+    reservas = [];
+    erroresReservas = [];
+    clavesReservas = null;
+  } else {
+    try {
+      const r = await invoke<{ reservas: Reserva[]; errores: string[] }>("reservas", { forzar });
+      reservas = r.reservas;
+      erroresReservas = r.errores;
+      avisarReservasNuevas();
+    } catch (error) {
+      erroresReservas = [String(error)];
+    }
+  }
+  dibujarReservas();
+}
+
+/** Toast cuando alguien reserva una llamada nueva (desde la última revisión). */
+function avisarReservasNuevas() {
+  const claves = new Set(reservas.map(claveReserva));
+  const antes = clavesReservas;
+  clavesReservas = claves;
+  if (!antes) return; // primera carga: no avisar lo que ya estaba
+  const nuevas = reservas.filter((r) => !antes.has(claveReserva(r)) && new Date(r.inicio) > new Date());
+  if (!nuevas.length) return;
+  const r = nuevas[0];
+  $("#toast-titulo").textContent = nuevas.length === 1 ? "Nueva llamada reservada" : `${nuevas.length} llamadas nuevas reservadas`;
+  $("#toast-cuerpo").textContent = `${r.invitado || r.titulo} · ${cuandoReserva(new Date(r.inicio))}`;
+  $("#toast-accion").textContent = "Ver";
+  felizHasta = Date.now() + 4000;
+  segmentoPendiente = "reservas";
+  mostrarToast("aviso");
+}
+let segmentoPendiente: Segmento | null = null;
+function elegirReservas() {
+  irA("inicio");
+  elegirSegmento("reservas");
+}
+
 function elegirSegmento(s: Segmento) {
   segmento = s;
   document.querySelectorAll<HTMLButtonElement>(".segmentos button").forEach((b) => b.classList.toggle("activo", b.dataset.seg === s));
   $("#seg-notion").hidden = s !== "notion";
   $("#seg-calendario").hidden = s !== "calendario";
   $("#seg-tareas").hidden = s !== "tareas";
+  $("#seg-reservas").hidden = s !== "reservas";
+  if (s === "reservas") dibujarReservas();
   if (s === "notion") sinLeer = 0;
   if (s === "calendario") {
     diaElegido = new Date();
@@ -1021,6 +1124,8 @@ function dibujarConexiones() {
         // Notion Calendar no tiene API: usa tus calendarios de Google (la conexión de Google Calendar).
         marcar(!!conexiones.calendario, () => invoke("abrir_app", { cual: "notion-calendar" }));
         tarjeta.title = "Muestra los eventos de tu Google Calendar; el botón abre Notion Calendar";
+      } else if (a.id === "contentboard") {
+        marcar(!!conexiones.contentboard, () => elegirReservas());
       } else if (a.id in conexiones) {
         marcar(!!conexiones[a.id], () => invoke("abrir_app", { cual: a.id }));
       } else if (a.id === "claude") {
@@ -1056,6 +1161,7 @@ async function actualizarConexiones() {
   dibujarConexiones();
   cargarCalendario();
   cargarTareas();
+  cargarReservas();
   // Si se acaba de conectar Spotify, el corazón ya sirve.
   if (cancion) {
     invoke<boolean | null>("favorito_musica", { appMusica: cancion.app, cambiar: false })
@@ -1111,7 +1217,11 @@ $("#capa-toast").addEventListener("click", () => {
   } else if (toast === "reunion") {
     abrir("inicio");
     elegirSegmento("calendario");
-  } else abrir("inicio");
+  } else {
+    abrir("inicio");
+    elegirSegmento(segmentoPendiente ?? "notion"); // el aviso de Notion o el de una reserva nueva
+    segmentoPendiente = null;
+  }
 });
 $("#cancion-portada").addEventListener("click", () => abrir("inicio"));
 
@@ -1119,7 +1229,16 @@ document.querySelectorAll<HTMLButtonElement>(".pastilla[data-pestana]").forEach(
   b.addEventListener("click", () => irA(b.dataset.pestana as Pestana));
 });
 document.querySelectorAll<HTMLButtonElement>(".segmentos button").forEach((b) => {
-  b.addEventListener("click", () => elegirSegmento(b.dataset.seg as Segmento));
+  b.addEventListener("click", () => {
+    const s = b.dataset.seg as Segmento;
+    // Tocar «Reservas» estando ya en Reservas = actualizar ahora (también contentBoard).
+    if (s === "reservas" && segmento === "reservas") {
+      $("#sin-reservas").hidden = false;
+      vacio($("#sin-reservas"), "Actualizando…");
+      cargarReservas(true);
+    }
+    elegirSegmento(s);
+  });
 });
 
 $("#form-pedido").addEventListener("submit", (e) => {
@@ -1305,6 +1424,7 @@ listen<Aviso[]>("avisos-nuevos", ({ payload: nuevos }) => {
   if (abierta && pestana === "inicio" && segmento === "notion") return;
   sinLeer += nuevos.length;
   const primero = nuevos[0];
+  segmentoPendiente = "notion";
   $("#toast-titulo").textContent = nuevos.length === 1 ? `Nuevo en ${primero.base}` : `${nuevos.length} novedades en Notion`;
   $("#toast-cuerpo").textContent = `«${primero.titulo}» · ${primero.tipo} · ahora`;
   $("#toast-accion").textContent = "Ver";
@@ -1423,6 +1543,7 @@ async function iniciar() {
   window.setInterval(revisarReuniones, 30_000);
   window.setInterval(cargarCalendario, 10 * 60_000);
   window.setInterval(cargarTareas, 5 * 60_000);
+  window.setInterval(() => cargarReservas(), 5 * 60_000); // contentBoard se consulta como mucho cada 30 min (Rust)
   window.setInterval(revisarInactividad, 15_000);
 }
 

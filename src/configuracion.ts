@@ -36,6 +36,8 @@ type AppConexion = {
   automatica?: boolean;
   /** Botón «Abrir» (id para abrir_app). */
   abrir?: string;
+  /** contentBoard: se conecta a través del conector de Claude (sin token). */
+  especial?: "contentboard";
   /** Se conecta iniciando sesión (Microsoft o Spotify) en vez de pegar un token. */
   login?: "planner" | "spotify";
 };
@@ -134,6 +136,28 @@ const APPS: AppConexion[] = [
     ],
     campos: [{ etiqueta: "Id. de aplicación (cliente)", ejemplo: "1a2b3c4d-1111-2222-3333-444455556666", secreto: false }],
     login: "planner",
+  },
+  {
+    id: "calendly",
+    nombre: "Calendly",
+    letra: "C",
+    color: "#4f8cff",
+    detalle: "Las llamadas que te reservan, en la pestaña «Reservas», con aviso cuando alguien agenda.",
+    enlace: { url: "https://calendly.com/integrations/api_webhooks", texto: "Abrir Calendly → API y webhooks ↗" },
+    pasos: [
+      "En Calendly, entra a <b>Integraciones y apps</b> → <b>API y webhooks</b>.",
+      "En <b>Tokens de acceso personal</b> pulsa <b>Generar nuevo token</b>, ponle «Sylvie» y crea el token.",
+      "Copia el token (solo se muestra una vez) y pégalo aquí:",
+    ],
+    campos: [{ etiqueta: "Token de acceso personal", ejemplo: "eyJraWQiOi…", secreto: true }],
+  },
+  {
+    id: "contentboard",
+    nombre: "contentBoard",
+    letra: "cB",
+    color: "#ff9f6e",
+    detalle: "Las reservas del booking (llamadas agendadas) en la pestaña «Reservas». Se leen con el conector de contentBoard de tu cuenta de Claude: cada consulta usa un poquito de tu plan, así que se revisa cada 30 minutos.",
+    especial: "contentboard",
   },
   {
     id: "musica",
@@ -336,6 +360,30 @@ function tarjetaApp(app: AppConexion) {
   const botonAbrir = () => boton("Abrir", "boton sec", () => invoke("abrir_app", { cual: app.abrir ?? app.id }).catch(console.error));
   if (app.proximamente) {
     // nada que hacer todavía
+  } else if (app.especial === "contentboard") {
+    const conectarCB = async (b: HTMLButtonElement) => {
+      mostrarGlobal("Preguntándole a contentBoard por tus reservas (a través de Claude, tarda unos segundos)…", "exito");
+      try {
+        const r = await ocupado([b], () => invoke<string>("contentboard_conectar"));
+        await cargarConexiones();
+        mostrarGlobal(`✓ Conectado: ${r}`, "exito");
+      } catch (error) {
+        mostrarGlobal(String(error), "error");
+      }
+    };
+    if (conectada) {
+      acciones.append(
+        boton("Probar", "boton sec", function (this: HTMLButtonElement) { conectarCB(this); }),
+        boton("Quitar", "boton peligro", async () => {
+          await invoke("contentboard_desconectar").catch(console.error);
+          await cargarConexiones();
+        }),
+      );
+    } else {
+      const b = boton("Conectar", "boton");
+      b.addEventListener("click", () => conectarCB(b));
+      acciones.append(b);
+    }
   } else if (app.automatica) {
     acciones.append(botonAbrir());
   } else if (app.usa) {

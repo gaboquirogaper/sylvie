@@ -306,7 +306,7 @@ body.arrastrando .zona { border-color: var(--acento); background: rgba(126, 224,
 .fila-titulo { display: flex; align-items: baseline; gap: 10px; padding: 0 4px; }
 .fila-titulo .t-titulo { font-size: 13px; }
 .fila-titulo .t-mini { flex-grow: 1; }
-.apps { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: min-content; gap: 8px; }
+.apps { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: min-content; gap: 8px; }
 .app { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; padding: 7px 8px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .app .cabeza { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
 .app .letra.doble { font-size: 10.5px; letter-spacing: -0.02em; }
@@ -414,3 +414,9 @@ body:not(.flotante) #flotante .barra-airdrop { display: none; }
 .controles button:disabled { opacity: 0.3; cursor: default; }
 .controles button:disabled:hover { background: none; }
 .controles .favorito.apagado { opacity: 0.45; }
+
+/* Pestaña Reservas: con 4 segmentos ya no entra el resumen de la derecha */
+#resumen-derecha { display: none; }
+.segmentos button { padding: 0 9px; }
+#lista-reservas { max-height: 186px; }
+.evento .t-mini { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -30,6 +30,7 @@ mod navegador;
 mod notch;
 mod notion;
 mod planner;
+mod reservas;
 mod secretos;
 mod sistema;
 mod spotify;
@@ -90,6 +91,9 @@ pub fn run() {
             integraciones::abrir_enlace,
             integraciones::abrir_app,
             integraciones::logins_listos,
+            reservas::reservas,
+            reservas::contentboard_conectar,
+            reservas::contentboard_desconectar,
             planner::planner_iniciar,
             planner::planner_cancelar,
             spotify::spotify_iniciar,

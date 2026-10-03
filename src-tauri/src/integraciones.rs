@@ -25,7 +25,8 @@ const API_ASANA: &str = "https://app.asana.com/api/1.0";
 const MAX_TAREAS: usize = 40;
 
 /// Sitios que Sylvie puede abrir en el navegador.
-const HOSTS_PERMITIDOS: [&str; 13] = [
+const HOSTS_PERMITIDOS: [&str; 14] = [
+    "calendly.com",
     "developer.spotify.com",
     "planner.cloud.microsoft",
     "microsoft.com",
@@ -47,6 +48,7 @@ fn cuenta(id: &str) -> Result<&'static str, String> {
         "clickup" => Ok(CUENTA_CLICKUP),
         "asana" => Ok(CUENTA_ASANA),
         "trello" => Ok(CUENTA_TRELLO),
+        "calendly" => Ok(crate::reservas::CUENTA_CALENDLY),
         _ => Err("No conozco esa app.".into()),
     }
 }
@@ -68,7 +70,7 @@ pub struct EstadoApp {
 
 /// Qué apps tienen su llave guardada (nunca devuelve la llave).
 #[tauri::command]
-pub fn estado_conexiones() -> Result<Vec<EstadoApp>, String> {
+pub fn estado_conexiones(app: AppHandle) -> Result<Vec<EstadoApp>, String> {
     Ok(vec![
         EstadoApp { id: "notion", conectada: secretos::leer_token_notion()?.is_some() },
         EstadoApp { id: "calendario", conectada: secretos::leer(CUENTA_CALENDARIO)?.is_some() },
@@ -77,6 +79,8 @@ pub fn estado_conexiones() -> Result<Vec<EstadoApp>, String> {
         EstadoApp { id: "trello", conectada: secretos::leer(CUENTA_TRELLO)?.is_some() },
         EstadoApp { id: "planner", conectada: planner::conectado()? },
         EstadoApp { id: "spotify", conectada: crate::spotify::conectado()? },
+        EstadoApp { id: "calendly", conectada: secretos::leer(crate::reservas::CUENTA_CALENDLY)?.is_some() },
+        EstadoApp { id: "contentboard", conectada: configuracion::leer(&app).contentboard },
     ])
 }
 
@@ -105,6 +109,7 @@ pub async fn conectar_app(app: AppHandle, id: String, valor: String) -> Result<S
             let nombre = yo["data"]["name"].as_str().unwrap_or("tu cuenta");
             (valor.clone(), format!("Asana de {nombre}"))
         }
+        "calendly" => (valor.clone(), crate::reservas::verificar_calendly(&valor).await?),
         "trello" => {
             let (clave, token) = partes_trello(&valor)?;
             let yo = trello(&clave, &token, "/members/me", &[("fields", "fullName,username")]).await?;
@@ -412,22 +417,7 @@ fn leer_lista(salida: &str) -> Vec<(String, String, bool)> {
 /// Tarda unos segundos: Claude Code revisa cada conector.
 #[tauri::command]
 pub async fn conectores_claude(app: AppHandle) -> Result<Vec<Conector>, String> {
-    let carpeta = configuracion::ruta(&app, "espacio-claude")?;
-    std::fs::create_dir_all(&carpeta).map_err(|e| e.to_string())?;
-    let hijo = tokio::process::Command::new(claude::ruta_claude())
-        .args(["mcp", "list"])
-        .current_dir(&carpeta)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .output();
-    let salida = tokio::time::timeout(Duration::from_secs(45), hijo)
-        .await
-        .map_err(|_| "Claude Code tardó demasiado en listar sus conectores.".to_string())?
-        .map_err(|e| format!("No pude ejecutar Claude Code: {e}"))?;
-    let texto = String::from_utf8_lossy(&salida.stdout);
-
+    let texto = salida_mcp_list(&app).await?;
     let permitidos = configuracion::leer(&app).claude_apps;
     let mut lista: Vec<Conector> = leer_lista(&texto)
         .into_iter()
@@ -455,6 +445,34 @@ pub async fn conectores_claude(app: AppHandle) -> Result<Vec<Conector>, String> 
         }
     }
     Ok(lista)
+}
+
+/// Prefijo ("mcp__…") del conector de Claude cuyo nombre cumple `coincide`, si existe y está conectado.
+pub async fn buscar_conector(app: &AppHandle, coincide: impl Fn(&str) -> bool) -> Result<Option<String>, String> {
+    let texto = salida_mcp_list(app).await?;
+    Ok(leer_lista(&texto)
+        .into_iter()
+        .find(|(nombre, _, conectado)| *conectado && coincide(nombre))
+        .map(|(nombre, _, _)| prefijo_de(&nombre)))
+}
+
+/// Ejecuta `claude mcp list` (tarda unos segundos: Claude Code revisa cada conector).
+async fn salida_mcp_list(app: &AppHandle) -> Result<String, String> {
+    let carpeta = configuracion::ruta(app, "espacio-claude")?;
+    std::fs::create_dir_all(&carpeta).map_err(|e| e.to_string())?;
+    let hijo = tokio::process::Command::new(claude::ruta_claude())
+        .args(["mcp", "list"])
+        .current_dir(&carpeta)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .output();
+    let salida = tokio::time::timeout(Duration::from_secs(45), hijo)
+        .await
+        .map_err(|_| "Claude Code tardó demasiado en listar sus conectores.".to_string())?
+        .map_err(|e| format!("No pude ejecutar Claude Code: {e}"))?;
+    Ok(String::from_utf8_lossy(&salida.stdout).to_string())
 }
 
 /// Deja (o no) que Claude use un conector en los pedidos de Sylvie.
@@ -522,6 +540,7 @@ pub fn abrir_app(app: AppHandle, cual: String) -> Result<(), String> {
         "clickup" => "https://app.clickup.com",
         "asana" => "https://app.asana.com",
         "trello" => "https://trello.com",
+        "calendly" => "https://calendly.com/app/scheduled_events/user/me",
         "notion-calendar" => "https://calendar.notion.so",
         "planner" => "https://planner.cloud.microsoft",
         _ => return Err("No conozco esa app.".into()),

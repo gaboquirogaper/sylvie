@@ -29,6 +29,8 @@ pub struct Ajustes {
     pub esquina: String,
     /// Buscar YouTube / YouTube Music en los navegadores.
     pub youtube: bool,
+    /// Mostrar las reservas de contentBoard (se leen con el conector de Claude).
+    pub contentboard: bool,
 }
 
 pub const ESQUINAS: [&str; 4] = ["abajo-der", "abajo-izq", "arriba-der", "arriba-izq"];
@@ -42,6 +44,7 @@ impl Default for Ajustes {
             apariencia: "notch".into(),
             esquina: "abajo-der".into(),
             youtube: true,
+            contentboard: false,
         }
     }
 }
@@ -188,6 +191,7 @@ pub fn guardar_ajustes(app: AppHandle, ajustes: Ajustes) -> Result<Ajustes, Stri
             "abajo-der".into()
         },
         youtube: ajustes.youtube,
+        contentboard: ajustes.contentboard,
     };
     crate::navegador::fijar_activo(ajustes.youtube);
     let antes = leer(&app);
