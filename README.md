@@ -17,10 +17,18 @@ y te muestra tu agenda, sin abrir ninguna ventana.
 
 ### [⬇️ Descargar para Mac](https://github.com/gaboquirogaper/sylvie/releases/latest) &nbsp;·&nbsp; [⬇️ Descargar para Windows](https://github.com/gaboquirogaper/sylvie/releases/latest)
 
+<img src="docs/demo.gif" alt="Sylvie en acción: saluda, avisa la canción nueva y un cambio en Notion, y crea una tarjeta con Claude" width="100%">
+
+<sub>Saluda al encender, avisa la canción nueva y lo que cambia en Notion, y hace tus pedidos con Claude paso a paso.</sub>
+
+</div>
+
+## 🌱 Conoce a la semillita
+
+<div align="center">
 <img src="docs/mascota.gif" alt="La semillita: tranquila, feliz, pensando, de DJ y durmiendo" width="640">
 
-<sub>La semillita cambia de cara según lo que pasa: tranquila, feliz, pensando, de DJ… y duerme si dejas la compu.</sub>
-
+<sub>Cambia de cara según lo que pasa: tranquila, feliz cuando termina algo, pensando mientras Claude trabaja, de DJ si pasas canciones rápido… y se duerme si dejas la compu. Dale tres toques y se marea 😵‍💫.</sub>
 </div>
 
 ---
