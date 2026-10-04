@@ -31,6 +31,15 @@ y te muestra tu agenda, sin abrir ninguna ventana.
 <sub>Cambia de cara según lo que pasa: tranquila, feliz cuando termina algo, pensando mientras Claude trabaja, de DJ si pasas canciones rápido… y se duerme si dejas la compu. Dale tres toques y se marea 😵‍💫.</sub>
 </div>
 
+## 🆕 Novedades de la 0.4.0
+
+<div align="center">
+<a href="https://github.com/gaboquirogaper/sylvie/releases/latest"><img src="docs/novedades/v0.4.0.jpg" alt="Novedades de Sylvie 0.4.0: calendario que gira, indicador en llamada, reservas e iconos nuevos" width="100%"></a>
+
+<sub>🗓️ Calendario que gira con el trackpad · 🔴 Indicador «en llamada» (Zoom, Teams, Meet) · 📥 Reservas de Calendly y contentBoard · 🎨 Iconos nuevos<br>
+<a href="https://github.com/gaboquirogaper/sylvie/releases/latest">Ver todas las novedades y descargar →</a></sub>
+</div>
+
 ---
 
 ## ✨ Qué hace
