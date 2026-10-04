@@ -25,6 +25,7 @@ dist-ssr
 
 # copias temporales
 .sylvie-*.tgz
+.prev*.tgz
 
 # Carpetas de trabajo locales
 Claude outputs/

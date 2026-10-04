@@ -58,7 +58,7 @@ Spotify, Apple Music, YouTube y YouTube Music con **portada real**, barra para a
 <td width="50%" valign="top">
 
 ### 📅 Agenda y tareas
-Tus reuniones de la semana con botón **«Unirse»** (Meet, Zoom, Teams) y un aviso 5 minutos antes. Tus tareas pendientes de ClickUp, Asana, Trello y Planner, con las vencidas en rojo.
+Tu semana o tu mes con el **nombre de cada reunión**, botón **«Unirse»** (Meet, Zoom, Teams) y aviso 5 minutos antes. Desliza con dos dedos en el trackpad y el calendario **gira como una rueda**. Tus tareas de ClickUp, Asana, Trello y Planner, con las vencidas en rojo.
 
 </td>
 <td width="50%"><img src="docs/capturas/calendario.png" alt="Calendario de la semana"></td>
@@ -66,6 +66,12 @@ Tus reuniones de la semana con botón **«Unirse»** (Meet, Zoom, Teams) y un av
 <tr>
 <td width="50%"><img src="docs/capturas/flotante.png" alt="Modo mascota flotante"></td>
 <td width="50%" valign="top">
+
+### 🔴 En llamada
+Si estás en una reunión de **Zoom, Teams o Google Meet**, el notch muestra un puntito rojo con el tiempo. Un clic te devuelve a la llamada y, en Zoom y Meet, puedes salir desde ahí.
+
+### 🗓️ Reservas
+Las llamadas que te agendan por **Calendly** o el booking de **contentBoard**, en su propia pestaña, con aviso cuando alguien reserva.
 
 ### 🌱 Notch o mascota flotante
 ¿Tu pantalla no tiene notch? Sylvie flota en una esquina y la mueves arrastrándola. Arrastra archivos sobre ella y **se los come** 🍽️ para mandarlos por AirDrop.
@@ -91,6 +97,9 @@ Tus reuniones de la semana con botón **«Unirse»** (Meet, Zoom, Teams) y un av
 | **Google Calendar · Notion Calendar** | Reuniones de la semana y «Unirse» | Dirección secreta iCal |
 | **ClickUp · Asana · Trello** | Tareas pendientes asignadas a ti | Token personal |
 | **Microsoft Planner** | Tareas de Microsoft 365 | Iniciar sesión con Microsoft |
+| **Calendly** | Llamadas que te reservan | Token personal |
+| **contentBoard** | Reservas del booking | Conector de Claude |
+| **Zoom · Teams · Google Meet** | Indicador «en llamada» | Automático |
 | **Seed Studio** | Citas y asistente de IA | Próximamente |
 
 Todo se configura desde **Ajustes**, con los pasos explicados para cada app.
@@ -134,6 +143,7 @@ Todo se configura desde **Ajustes**, con los pasos explicados para cada app.
 - [x] Calendario, ClickUp, Asana, Trello, Planner
 - [x] YouTube, corazón de Spotify, adjuntos para Claude
 - [x] Mascota flotante para pantallas sin notch
+- [x] Calendario de mes que gira con el trackpad, reservas (Calendly, contentBoard) e indicador «en llamada»
 - [ ] **Windows** con todas las funciones
 - [ ] Atajo de teclado para abrir Sylvie
 - [ ] Aprobar los permisos de Claude Code desde el notch
@@ -165,7 +175,7 @@ Las versiones se publican solas: al subir una etiqueta `v0.x.y`, GitHub arma los
 
 <br>
 
-**Sylvie lives in your MacBook's notch** (or floats in a corner on screens without one). It shows Notion updates, runs requests through **Claude Code** with your own plan, controls Spotify, Apple Music and YouTube with real album art, and shows your calendar and tasks from Google Calendar, ClickUp, Asana, Trello and Microsoft Planner.
+**Sylvie lives in your MacBook's notch** (or floats in a corner on screens without one). It shows Notion updates, runs requests through **Claude Code** with your own plan, controls Spotify, Apple Music and YouTube with real album art, shows your calendar and tasks from Google Calendar, ClickUp, Asana, Trello and Microsoft Planner, your Calendly bookings, and a live "in a call" indicator for Zoom, Teams and Google Meet.
 
 - No telemetry. Tokens are stored in the macOS Keychain or the Windows Credential Manager.
 - Download the `.dmg` (Mac) or `-setup.exe` (Windows, in progress) from [Releases](https://github.com/gaboquirogaper/sylvie/releases/latest).

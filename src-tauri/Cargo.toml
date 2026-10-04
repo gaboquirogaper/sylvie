@@ -1,6 +1,6 @@
 [package]
 name = "sylvie"
-version = "0.3.0"
+version = "0.4.0"
 description = "Sylvie, asistente en el notch"
 authors = ["Gabo"]
 edition = "2021"
