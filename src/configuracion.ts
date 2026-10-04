@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Mascota } from "./mascota";
+import { tileApp } from "./iconos";
 
 // ══ Tipos ═══════════════════════════════════════════════════════
 type Seccion = "general" | "conexiones" | "notion" | "claude";
@@ -146,7 +147,8 @@ const APPS: AppConexion[] = [
     enlace: { url: "https://calendly.com/integrations/api_webhooks", texto: "Abrir Calendly → API y webhooks ↗" },
     pasos: [
       "En Calendly, entra a <b>Integraciones y apps</b> → <b>API y webhooks</b>.",
-      "En <b>Tokens de acceso personal</b> pulsa <b>Generar nuevo token</b>, ponle «Sylvie» y crea el token.",
+      "En <b>Tokens de acceso personal</b> pulsa <b>Generar nuevo token</b> y ponle «Sylvie».",
+      "Si te pide elegir permisos (scopes), marca <b>users:read</b> y <b>scheduled_events:read</b>. Con eso basta: Sylvie solo lee.",
       "Copia el token (solo se muestra una vez) y pégalo aquí:",
     ],
     campos: [{ etiqueta: "Token de acceso personal", ejemplo: "eyJraWQiOi…", secreto: true }],
@@ -346,8 +348,7 @@ function tarjetaApp(app: AppConexion) {
   const tarjeta = el("div", `app${abierta ? " abierta" : ""}${app.proximamente ? " apagada" : ""}`);
 
   const cabeza = el("div", "cabeza");
-  const letra = el("span", app.letra.length > 1 ? "letra doble" : "letra", app.letra);
-  letra.style.background = app.color;
+  const letra = tileApp(app.id, app.color);
   const textos = el("div", "textos");
   const titulo = el("div", "titulo");
   titulo.append(el("b", "", app.nombre));

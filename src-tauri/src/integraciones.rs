@@ -94,6 +94,10 @@ pub async fn conectar_app(app: AppHandle, id: String, valor: String) -> Result<S
     let (guardar, descripcion) = match id.as_str() {
         "calendario" => {
             let url = calendario::normalizar_url(&valor)?;
+            // La dirección PÚBLICA de Google solo dice «Busy/Ocupado», sin nombres.
+            if url.contains("/public/") {
+                return Err("Esa es la dirección pública: solo muestra «Busy» sin los nombres de los eventos. Copia la «Dirección secreta en formato iCal» (más abajo en la misma página).".into());
+            }
             let texto = calendario::descargar(&url).await?;
             let eventos = calendario::eventos_semana(&texto).len();
             let nombre = calendario::nombre(&texto);
@@ -109,7 +113,11 @@ pub async fn conectar_app(app: AppHandle, id: String, valor: String) -> Result<S
             let nombre = yo["data"]["name"].as_str().unwrap_or("tu cuenta");
             (valor.clone(), format!("Asana de {nombre}"))
         }
-        "calendly" => (valor.clone(), crate::reservas::verificar_calendly(&valor).await?),
+        "calendly" => {
+            let token = crate::reservas::limpiar_token(&valor);
+            let nombre = crate::reservas::verificar_calendly(&token).await?;
+            (token, nombre)
+        }
         "trello" => {
             let (clave, token) = partes_trello(&valor)?;
             let yo = trello(&clave, &token, "/members/me", &[("fields", "fullName,username")]).await?;
@@ -139,13 +147,38 @@ pub fn desconectar_app(app: AppHandle, id: String) -> Result<(), String> {
 // ── Calendario ──────────────────────────────────────────────────
 
 /// Eventos de hoy y los próximos 7 días. Lista vacía si no hay calendario conectado.
+/// `desde` / `hasta` (AAAA-MM-DD, opcionales): el rango que se ve (semana o mes). Por defecto, hoy + 7 días.
 #[tauri::command]
-pub async fn eventos_calendario() -> Result<Vec<calendario::Evento>, String> {
+pub async fn eventos_calendario(desde: Option<String>, hasta: Option<String>) -> Result<Vec<calendario::Evento>, String> {
     let Some(url) = secretos::leer(CUENTA_CALENDARIO)? else {
         return Ok(Vec::new());
     };
-    let texto = calendario::descargar(&url).await?;
-    Ok(calendario::eventos_semana(&texto))
+    let texto = texto_calendario(&url).await?;
+    let fecha = |t: &Option<String>| {
+        t.as_deref()
+            .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+            .and_then(|n| Local.from_local_datetime(&n).earliest())
+    };
+    let inicio = fecha(&desde).unwrap_or_else(calendario::inicio_de_hoy);
+    let fin = fecha(&hasta).unwrap_or(inicio + chrono::Duration::days(7));
+    // Como mucho ~4 meses por consulta.
+    let fin = fin.min(inicio + chrono::Duration::days(124));
+    Ok(calendario::eventos_entre(&texto, inicio, fin))
+}
+
+/// El calendario descargado se guarda 5 minutos (al moverte entre meses no se descarga cada vez).
+static CACHE_ICAL: std::sync::Mutex<Option<(String, std::time::Instant, String)>> = std::sync::Mutex::new(None);
+
+async fn texto_calendario(url: &str) -> Result<String, String> {
+    if let Some((u, cuando, texto)) = CACHE_ICAL.lock().unwrap().clone() {
+        if u == url && cuando.elapsed() < Duration::from_secs(300) {
+            return Ok(texto);
+        }
+    }
+    let texto = calendario::descargar(url).await?;
+    *CACHE_ICAL.lock().unwrap() = Some((url.to_string(), std::time::Instant::now(), texto.clone()));
+    Ok(texto)
 }
 
 // ── Tareas (ClickUp y Asana) ────────────────────────────────────

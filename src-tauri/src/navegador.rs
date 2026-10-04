@@ -78,6 +78,16 @@ fn abierto(proceso: &str) -> bool {
 /// Pestañas con YouTube de un navegador: (ventana, pestaña, url, título).
 #[cfg(target_os = "macos")]
 fn pestanas(navegador: &str, safari: bool) -> Vec<(u32, u32, String, String)> {
+    pestanas_con(
+        navegador,
+        safari,
+        "u contains \"youtube.com/watch\" or u contains \"music.youtube.com\" or u contains \"youtube.com/shorts\"",
+    )
+}
+
+/// Pestañas de un navegador cuya dirección `u` cumple `condicion` (AppleScript).
+#[cfg(target_os = "macos")]
+fn pestanas_con(navegador: &str, safari: bool, condicion: &str) -> Vec<(u32, u32, String, String)> {
     let titulo = if safari { "name" } else { "title" };
     let script = format!(
         "tell application \"{navegador}\"\n\
@@ -87,7 +97,7 @@ fn pestanas(navegador: &str, safari: bool) -> Vec<(u32, u32, String, String)> {
            try\n\
              repeat with t from 1 to (count of tabs of window w)\n\
                set u to URL of tab t of window w\n\
-               if u contains \"youtube.com/watch\" or u contains \"music.youtube.com\" or u contains \"youtube.com/shorts\" then\n\
+               if {condicion} then\n\
                  set salida to salida & (w as text) & sep & (t as text) & sep & u & sep & ({titulo} of tab t of window w) & linefeed\n\
                end if\n\
              end repeat\n\
@@ -285,4 +295,68 @@ pub fn host_ok(url: &str) -> bool {
         .filter(|u| u.scheme() == "https")
         .and_then(|u| u.host_str().map(|h| HOSTS_PORTADA.contains(&h)))
         .unwrap_or(false)
+}
+
+// ── Videollamadas en el navegador (las usa llamadas.rs) ─────────
+
+/// Una pestaña de videollamada: (navegador, ventana, pestaña).
+#[derive(Clone, PartialEq)]
+pub struct PestanaLlamada {
+    pub navegador: &'static str,
+    pub ventana: u32,
+    pub pestana: u32,
+}
+
+/// ¿Es la dirección de una reunión de Google Meet (meet.google.com/abc-defg-hij)?
+fn es_reunion_meet(url: &str) -> bool {
+    let Some(resto) = url.split("meet.google.com/").nth(1) else { return false };
+    let codigo: String = resto.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+    let partes: Vec<&str> = codigo.split('-').collect();
+    partes.len() == 3 && partes.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase()))
+}
+
+/// Busca una pestaña con una reunión de Google Meet abierta.
+#[cfg(target_os = "macos")]
+pub fn pestana_meet() -> Option<PestanaLlamada> {
+    for (navegador, proceso, safari) in NAVEGADORES {
+        if !abierto(proceso) {
+            continue;
+        }
+        for (ventana, pestana, url, _) in pestanas_con(navegador, safari, "u contains \"meet.google.com/\"") {
+            if es_reunion_meet(&url) {
+                return Some(PestanaLlamada { navegador, ventana, pestana });
+            }
+        }
+    }
+    None
+}
+
+/// Trae al frente la pestaña de la llamada.
+#[cfg(target_os = "macos")]
+pub fn mostrar_pestana(p: &PestanaLlamada) -> bool {
+    let (n, w, t) = (p.navegador, p.ventana, p.pestana);
+    let script = if n == "Safari" {
+        format!("tell application \"Safari\"\nset current tab of window {w} to tab {t} of window {w}\nset index of window {w} to 1\nactivate\nend tell")
+    } else {
+        format!("tell application \"{n}\"\nset active tab index of window {w} to {t}\nset index of window {w} to 1\nactivate\nend tell")
+    };
+    osascript(&script).is_some()
+}
+
+/// Cierra la pestaña de la llamada (= salir de la reunión de Meet).
+#[cfg(target_os = "macos")]
+pub fn cerrar_pestana(p: &PestanaLlamada) -> bool {
+    let (n, w, t) = (p.navegador, p.ventana, p.pestana);
+    osascript(&format!("tell application \"{n}\" to close tab {t} of window {w}")).is_some()
+}
+
+#[cfg(test)]
+mod pruebas_meet {
+    #[test]
+    fn reconoce_reuniones() {
+        assert!(super::es_reunion_meet("https://meet.google.com/abc-defg-hij"));
+        assert!(super::es_reunion_meet("https://meet.google.com/abc-defg-hij?authuser=0"));
+        assert!(!super::es_reunion_meet("https://meet.google.com/landing"));
+        assert!(!super::es_reunion_meet("https://meet.google.com/"));
+    }
 }

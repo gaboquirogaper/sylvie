@@ -68,15 +68,29 @@ async fn calendly_get(token: &str, url: &str, consulta: &[(&str, String)]) -> Re
         .map_err(|e| format!("No pude conectarme a Calendly. ¿Hay internet? ({e})"))?;
     match r.status().as_u16() {
         200 => r.json().await.map_err(|e| format!("Calendly respondió algo raro: {e}")),
-        401 | 403 => Err("Calendly rechazó el token: es incorrecto o fue revocado.".into()),
+        401 => Err("Calendly no reconoce ese token. Revisa que copiaste el token completo (es largo y empieza con «eyJ»), no el «signing key» ni el id de la app.".into()),
+        // Los tokens nuevos de Calendly piden elegir permisos (scopes) al crearlos.
+        403 => Err("El token no tiene permiso para leer tus reuniones. Crea uno nuevo y marca los permisos «users:read» y «scheduled_events:read».".into()),
         429 => Err("Calendly pide esperar un poco.".into()),
         c => Err(format!("Calendly respondió con un error ({c}).")),
     }
 }
 
+/// Quita espacios, saltos de línea y un «Bearer » pegado por error.
+pub fn limpiar_token(token: &str) -> String {
+    let t: String = token.chars().filter(|c| !c.is_whitespace()).collect();
+    t.strip_prefix("Bearer").or(t.strip_prefix("bearer")).unwrap_or(&t).to_string()
+}
+
 /// Verifica el token y devuelve "Calendly de <nombre>".
 pub async fn verificar_calendly(token: &str) -> Result<String, String> {
-    let yo = calendly_get(token, &format!("{API_CALENDLY}/users/me"), &[]).await?;
+    let token = limpiar_token(token);
+    if token.is_empty() {
+        return Err("Pega el token de Calendly.".into());
+    }
+    let yo = calendly_get(&token, &format!("{API_CALENDLY}/users/me"), &[]).await?;
+    let usuario = yo["resource"]["uri"].as_str().unwrap_or_default().to_string();
+    calendly_get(&token, &format!("{API_CALENDLY}/scheduled_events"), &[("user", usuario), ("count", "1".into())]).await?;
     Ok(format!("Calendly de {}", yo["resource"]["name"].as_str().unwrap_or("tu cuenta")))
 }
 

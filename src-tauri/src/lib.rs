@@ -16,6 +16,7 @@
 //! - planner        → Microsoft Planner (inicio de sesión con código)
 //! - spotify        → corazón de Spotify («Tus me gusta») con la API web oficial
 //! - navegador      → YouTube / YouTube Music en Chrome, Brave, Edge y Safari
+//! - llamadas       → indicador «en llamada» (Zoom, Teams, Google Meet)
 
 mod archivos;
 mod avisos;
@@ -25,6 +26,7 @@ mod claves_publicas;
 mod claude;
 mod configuracion;
 mod integraciones;
+mod llamadas;
 mod musica;
 mod navegador;
 mod notch;
@@ -92,6 +94,9 @@ pub fn run() {
             integraciones::abrir_app,
             integraciones::logins_listos,
             reservas::reservas,
+            llamadas::llamada_actual,
+            llamadas::llamada_volver,
+            llamadas::llamada_salir,
             reservas::contentboard_conectar,
             reservas::contentboard_desconectar,
             planner::planner_iniciar,
@@ -109,6 +114,7 @@ pub fn run() {
             avisos::iniciar(app.handle().clone());
             navegador::fijar_activo(configuracion::leer(app.handle()).youtube);
             musica::iniciar(app.handle().clone());
+            llamadas::iniciar(app.handle().clone());
             sistema::escuchar_desbloqueo(app.handle().clone());
             Ok(())
         })

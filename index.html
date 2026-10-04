@@ -15,6 +15,7 @@
         <canvas id="m-flotante" class="m96"></canvas>
       </button>
       <div class="barra-airdrop" aria-hidden="true"><i></i></div>
+      <button class="en-llamada" type="button" data-llamada="volver" title="Volver a la llamada"><i class="punto-rojo"></i><b class="llamada-tiempo">0:00</b></button>
       <span class="caritas">
         <button class="carita" type="button" data-id="notion" title="Abrir Notion" aria-label="Abrir Notion"></button>
         <button class="carita" type="button" data-id="claude" title="Pedirle algo a Claude" aria-label="Pedirle algo a Claude"></button>
@@ -33,6 +34,7 @@
              Clic en Sylvie o en el fondo = abrir el panel. Clic en una carita = su acción. -->
         <div id="capa-compacta" class="capa compacta">
           <button id="abrir-compacta" class="nb" type="button" aria-label="Abrir Sylvie"><canvas id="m-compacta" class="m32"></canvas></button>
+          <button class="en-llamada" type="button" data-llamada="volver" title="Volver a la llamada"><i class="punto-rojo"></i><b class="llamada-tiempo">0:00</b></button>
           <span class="caritas">
             <button class="carita" type="button" data-id="notion" title="Abrir Notion" aria-label="Abrir Notion"></button>
             <button class="carita" type="button" data-id="claude" title="Pedirle algo a Claude" aria-label="Pedirle algo a Claude"></button>
@@ -114,6 +116,7 @@
             </div>
             <div class="hueco-notch" aria-hidden="true"></div>
             <div class="grupo der">
+              <button class="en-llamada" type="button" data-llamada="volver" title="Volver a la llamada"><i class="punto-rojo"></i><span class="llamada-app"></span>&nbsp;<b class="llamada-tiempo">0:00</b><span class="salir" data-llamada="salir" title="Salir de la llamada" hidden>×</span></button>
               <button class="pastilla" type="button" data-pestana="conexiones">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"></path></svg><span>Conexiones</span>
               </button>
@@ -164,7 +167,14 @@
                 <p id="sin-avisos" class="vacio">Aquí aparecerán tus avisos de Notion.</p>
               </div>
               <div id="seg-calendario" class="seg-col" hidden>
+                <div class="cal-cabeza">
+                  <button id="cal-ant" class="cal-flecha" type="button" aria-label="Anterior">‹</button>
+                  <button id="cal-titulo" class="cal-titulo" type="button"></button>
+                  <button id="cal-sig" class="cal-flecha" type="button" aria-label="Siguiente">›</button>
+                  <button id="cal-hoy" class="cal-hoy" type="button">Hoy</button>
+                </div>
                 <div id="semana" class="semana"></div>
+                <div id="mes" class="mes" hidden></div>
                 <ul id="lista-eventos" class="lista eventos"></ul>
                 <p id="sin-eventos" class="vacio"></p>
               </div>

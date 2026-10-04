@@ -17,7 +17,7 @@ use serde::Serialize;
 pub const HOSTS_REUNION: [&str; 4] = ["meet.google.com", "zoom.us", "teams.microsoft.com", "teams.live.com"];
 /// Cuántos días hacia adelante se muestran.
 const DIAS_VENTANA: i64 = 7;
-const MAX_EVENTOS: usize = 60;
+const MAX_EVENTOS: usize = 400;
 
 #[derive(Clone, Serialize)]
 pub struct Evento {
@@ -499,13 +499,22 @@ fn crudos(texto: &str) -> Vec<Crudo> {
 
 /// Eventos desde hoy (00:00) hasta dentro de 7 días, ordenados.
 pub fn eventos_semana(texto: &str) -> Vec<Evento> {
-    let hoy = Local::now()
+    let hoy = inicio_de_hoy();
+    eventos_entre(texto, hoy, hoy + Duration::days(DIAS_VENTANA))
+}
+
+pub fn inicio_de_hoy() -> DateTime<Local> {
+    Local::now()
         .date_naive()
         .and_hms_opt(0, 0, 0)
         .and_then(|n| Local.from_local_datetime(&n).earliest())
-        .unwrap_or_else(Local::now);
-    let fin_ventana = hoy + Duration::days(DIAS_VENTANA);
+        .unwrap_or_else(Local::now)
+}
 
+/// Eventos que tocan el rango [desde, hasta), ordenados (para la semana o el mes que se ve).
+pub fn eventos_entre(texto: &str, desde: DateTime<Local>, hasta: DateTime<Local>) -> Vec<Evento> {
+    let hoy = desde;
+    let fin_ventana = hasta;
     let crudos = crudos(texto);
     // Repeticiones que fueron cambiadas o canceladas una sola vez.
     let cambiadas: HashSet<(String, i64)> = crudos

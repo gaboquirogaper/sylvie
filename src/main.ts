@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Mascota, type EstadoMascota } from "./mascota";
+import { ICONOS as ICONOS_APP, tileApp } from "./iconos";
 
 // ══ Tipos ═══════════════════════════════════════════════════════
 type Modo = "compacta" | "hover" | "abierta" | "toast" | "cancion" | "aturdida" | "comer";
@@ -140,11 +141,17 @@ let conexiones: Record<string, boolean> = {};
 let eventos: Evento[] = [];
 let errorCalendario = "";
 let diaElegido = new Date();
+let eventosVista: Evento[] = []; // los del rango que se ve (semana o mes); `eventos` = próximos 7 días (para avisos)
+let vistaCal: "semana" | "mes" = "semana";
+let inicioSemana = lunesDe(new Date());
+let mesVisto = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let tareas: Tarea[] = [];
 let erroresTareas: string[] = [];
 const reunionesAvisadas = new Set<string>();
 let reunionToast: Evento | null = null;
 let reservas: Reserva[] = [];
+type Llamada = { app: string; desde: number; puede_salir: boolean } | null;
+let llamada: Llamada = null;
 let erroresReservas: string[] = [];
 let clavesReservas: Set<string> | null = null; // null = todavía no se cargaron (no avisar las que ya existían)
 let avisos: Aviso[] = [];
@@ -202,7 +209,12 @@ function actualizar() {
   modo = nuevo;
   document.body.dataset.modo = modo;
 
-  const t = modo === "compacta" && estadoAirDrop ? { w: 304, h: 44, r: 16 } : TAMANOS[modo];
+  const t =
+    modo === "compacta" && estadoAirDrop
+      ? { w: 304, h: 44, r: 16 }
+      : modo === "compacta" && llamada
+        ? { w: 352, h: 34, r: 14 } // un poco más ancho para el cronómetro de la llamada
+        : TAMANOS[modo];
   notch.style.width = `${t.w}px`;
   notch.style.height = `${t.h}px`;
   notch.style.borderRadius = apariencia === "flotante" ? "24px" : `0 0 ${t.r}px ${t.r}px`;
@@ -421,7 +433,7 @@ function dibujarAvisos() {
 }
 
 function dibujarResumen() {
-  const hoy = eventosDelDia(new Date()).length;
+  const hoy = eventosDelDia(new Date(), eventos).length;
   $("#resumen-derecha").textContent =
     segmento === "notion"
       ? `${avisos.length} recientes`
@@ -437,9 +449,18 @@ const inicioDelDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getD
 const mismoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 const hora = (d: Date) => d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 
-function eventosDelDia(d: Date) {
+function lunesDe(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+const sumarDias = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const fechaISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const esBusy = (t: string) => /^(busy|ocupad[oa]|no disponible)$/i.test(t.trim());
+
+function eventosDelDia(d: Date, fuente: Evento[] = eventosVista.length ? eventosVista : eventos) {
   const dia = inicioDelDia(d);
-  return eventos.filter((e) => {
+  return fuente.filter((e) => {
     const i = new Date(e.inicio);
     const f = new Date(e.fin);
     if (!e.todo_el_dia) return mismoDia(i, d);
@@ -459,25 +480,262 @@ function vacio(p: HTMLElement, texto: string, conectar = false) {
   }
 }
 
+const NOMBRES_DIA = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+
+/** Filas (semanas) que se ven a la vez en el mes; la grilla gira como una rueda. */
+const FILAS_MES = 5;
+/** Lunes de la primera fila visible del mes. */
+let semanaArriba = lunesDe(mesVisto);
+
+/** El mes «en foco» es el de la fila del medio. */
+function mesEnFoco() {
+  const d = sumarDias(semanaArriba, 7 * Math.floor(FILAS_MES / 2) + 3);
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+/** Rango de eventos a traer: lo que se ve y un poco antes y después (para girar sin huecos). */
+function rangoVisto(): [Date, Date] {
+  if (vistaCal === "semana") return [sumarDias(inicioSemana, -7), sumarDias(inicioSemana, 14)];
+  return [sumarDias(semanaArriba, -14), sumarDias(semanaArriba, 7 * (FILAS_MES + 2))];
+}
+
+function dibujarCabeceraCal() {
+  const base = vistaCal === "semana" ? sumarDias(inicioSemana, 3) : mesVisto;
+  const mes = base.toLocaleDateString("es", { month: "long", year: "numeric" });
+  $("#cal-titulo").replaceChildren(el("span", "", mes.charAt(0).toUpperCase() + mes.slice(1)), el("i", "", vistaCal === "semana" ? "▾" : "▴"));
+  $("#cal-titulo").title = vistaCal === "semana" ? "Ver el mes" : "Volver a la semana";
+  $("#cal-ant").title = vistaCal === "semana" ? "Semana anterior" : "Mes anterior";
+  $("#cal-sig").title = vistaCal === "semana" ? "Semana siguiente" : "Mes siguiente";
+}
+
+/** Puntitos de color por evento (máximo 3) para la semana y el mes. */
+function puntitos(d: Date) {
+  const del = eventosDelDia(d);
+  if (!del.length) return null;
+  const caja = el("span", "puntos");
+  del.slice(0, 3).forEach(() => caja.append(el("i")));
+  return caja;
+}
+
+/** Dibuja la semana (3 semanas en una tira: anterior, actual, siguiente) o el mes (filas de más arriba y abajo). */
 function dibujarSemana() {
   const hoy = new Date();
-  const nombres = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"];
-  $("#semana").replaceChildren(
-    ...Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
+  if (vistaCal === "mes") mesVisto = mesEnFoco();
+  dibujarCabeceraCal();
+  $("#semana").hidden = vistaCal !== "semana";
+  $("#mes").hidden = vistaCal !== "mes";
+  $("#lista-eventos").hidden = vistaCal !== "semana";
+  $("#sin-eventos").hidden = vistaCal !== "semana" || $("#sin-eventos").hidden;
+  const pista = el("div", "pista");
+  if (vistaCal === "semana") {
+    for (let i = -7; i < 14; i++) {
+      const d = sumarDias(inicioSemana, i);
       const clases = ["dia", mismoDia(d, hoy) ? "hoy" : "", mismoDia(d, diaElegido) ? "elegido" : ""].join(" ").trim();
       const caja = el("button", clases);
       caja.type = "button";
-      caja.append(el("small", "", i === 0 ? "Hoy" : nombres[d.getDay()]), el("b", "", String(d.getDate())));
-      if (eventosDelDia(d).length) caja.append(el("i", "marca"));
+      caja.append(el("small", "", mismoDia(d, hoy) ? "Hoy" : NOMBRES_DIA[(i + 7) % 7]), el("b", "", String(d.getDate())));
+      const p = puntitos(d);
+      if (p) caja.append(p);
       caja.addEventListener("click", () => {
+        if (i < 0 || i >= 7) return; // las de los costados solo se asoman al girar
         diaElegido = d;
         dibujarSemana();
         dibujarEventos();
       });
-      return caja;
-    }),
-  );
+      pista.append(caja);
+    }
+    $("#semana").replaceChildren(pista);
+  } else {
+    const nombres = el("div", "nombres");
+    nombres.append(...NOMBRES_DIA.map((n) => el("small", "nombre-dia", n)));
+    for (let i = -7; i < 7 * (FILAS_MES + 1); i++) {
+      const d = sumarDias(semanaArriba, i);
+      const fuera = d.getMonth() !== mesVisto.getMonth();
+      const clases = ["celda", fuera ? "fuera" : "", mismoDia(d, hoy) ? "hoy" : "", mismoDia(d, diaElegido) ? "elegido" : ""].join(" ").trim();
+      const caja = el("button", clases);
+      caja.type = "button";
+      caja.append(el("b", "", String(d.getDate())));
+      const p = puntitos(d);
+      if (p) caja.append(p);
+      const del = eventosDelDia(d);
+      if (del.length) caja.title = del.map((e) => (e.todo_el_dia ? e.titulo : `${hora(new Date(e.inicio))} ${e.titulo}`)).join("\n");
+      caja.addEventListener("click", () => {
+        diaElegido = d;
+        inicioSemana = lunesDe(d);
+        vistaCal = "semana";
+        desplazado = 0;
+        dibujarSemana();
+        dibujarEventos();
+        cargarVista();
+      });
+      pista.append(caja);
+    }
+    const ventana = el("div", "ventana");
+    ventana.append(pista);
+    $("#mes").replaceChildren(nombres, ventana);
+  }
+  aplicarDesplazamiento();
+}
+
+// ── Girar como una rueda ─────────────────────────────────────
+// La tira sigue al dedo píxel a píxel (y a la inercia del trackpad); al soltar, se acomoda sola
+// en la semana (o fila) más cercana con un rebote suave.
+let desplazado = 0; // px movidos desde la posición de reposo
+let eje: "x" | "y" | null = null; // el gesto se decide al empezar: de lado o vertical
+let ultimoMov = 0;
+let ultimoDelta = 0;
+let encajando = false;
+let timerEncaje = 0;
+let timerFin = 0;
+
+/** Ancho de una semana o alto de una fila del mes, en px. */
+function medida() {
+  if (vistaCal === "semana") return $("#semana").clientWidth || 300;
+  return document.querySelector<HTMLElement>("#mes .celda")?.offsetHeight || 19;
+}
+
+function aplicarDesplazamiento(animar = false) {
+  const pista = document.querySelector<HTMLElement>(vistaCal === "semana" ? "#semana .pista" : "#mes .pista");
+  if (!pista) return;
+  pista.style.transition = animar ? "transform 0.38s cubic-bezier(0.2, 0.9, 0.3, 1)" : "none";
+  pista.style.transform =
+    vistaCal === "semana" ? `translateX(calc(-100% / 3 + ${desplazado}px))` : `translateY(${desplazado - medida()}px)`;
+}
+
+/** Corre la vista una semana (o una fila) sin animación. */
+function correrUno(paso: number) {
+  if (vistaCal === "semana") {
+    inicioSemana = sumarDias(inicioSemana, 7 * paso);
+    const hoy = new Date();
+    diaElegido = mismoDia(lunesDe(hoy), inicioSemana) ? hoy : sumarDias(diaElegido, 7 * paso);
+  } else {
+    semanaArriba = sumarDias(semanaArriba, 7 * paso);
+  }
+  dibujarSemana();
+  dibujarEventos();
+}
+
+function terminarEncaje() {
+  clearTimeout(timerFin);
+  encajando = false;
+  const m = medida();
+  if (desplazado <= -m / 2) {
+    desplazado = 0;
+    correrUno(1);
+  } else if (desplazado >= m / 2) {
+    desplazado = 0;
+    correrUno(-1);
+  } else {
+    desplazado = 0;
+    aplicarDesplazamiento();
+  }
+  cargarVista();
+}
+
+/** Al soltar: se acomoda en la semana/fila más cercana (con un empujoncito según la velocidad). */
+function encajar() {
+  const m = medida();
+  const proyectado = desplazado - ultimoDelta * 3;
+  const destino = proyectado <= -m / 2 ? -m : proyectado >= m / 2 ? m : 0;
+  encajando = true;
+  desplazado = destino;
+  aplicarDesplazamiento(true);
+  timerFin = window.setTimeout(terminarEncaje, 400);
+}
+
+/** Flechas: la semana gira animada; el mes salta al mes anterior/siguiente. */
+function moverCal(paso: number) {
+  if (encajando) terminarEncaje();
+  if (vistaCal === "semana") {
+    encajando = true;
+    desplazado = -paso * medida();
+    aplicarDesplazamiento(true);
+    timerFin = window.setTimeout(terminarEncaje, 400);
+    return;
+  }
+  const caja = $("#mes");
+  caja.style.animation = "none";
+  void caja.offsetWidth; // reinicia la animación de entrada
+  caja.style.animation = "";
+  semanaArriba = lunesDe(new Date(mesVisto.getFullYear(), mesVisto.getMonth() + paso, 1));
+  desplazado = 0;
+  dibujarSemana();
+  dibujarEventos();
+  cargarVista();
+}
+
+$("#seg-calendario").addEventListener(
+  "wheel",
+  (e) => {
+    const ahora = Date.now();
+    if (ahora - ultimoMov > 180) eje = null; // gesto nuevo
+    if (!eje) eje = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? "x" : "y";
+    if (vistaCal === "semana" && eje === "y") return; // en la semana, arriba/abajo mueve la lista de eventos
+    e.preventDefault();
+    ultimoMov = ahora;
+    if (encajando) terminarEncaje();
+    // En el mes las filas son bajitas: se frena un poco para que no gire demasiado rápido.
+    const freno = vistaCal === "mes" ? 0.55 : 1;
+    const delta = (eje === "x" ? e.deltaX : e.deltaY) * (e.deltaMode === 1 ? 16 : 1) * freno;
+    ultimoDelta = delta;
+    desplazado -= delta;
+    const m = medida();
+    while (desplazado <= -m) {
+      desplazado += m;
+      correrUno(1);
+    }
+    while (desplazado >= m) {
+      desplazado -= m;
+      correrUno(-1);
+    }
+    aplicarDesplazamiento();
+    clearTimeout(timerEncaje);
+    timerEncaje = window.setTimeout(encajar, 140);
+  },
+  { passive: false },
+);
+$("#cal-ant").addEventListener("click", () => moverCal(-1));
+$("#cal-sig").addEventListener("click", () => moverCal(1));
+$("#cal-hoy").addEventListener("click", () => {
+  diaElegido = new Date();
+  inicioSemana = lunesDe(diaElegido);
+  semanaArriba = lunesDe(new Date(diaElegido.getFullYear(), diaElegido.getMonth(), 1));
+  vistaCal = "semana";
+  desplazado = 0;
+  dibujarSemana();
+  dibujarEventos();
+  cargarVista();
+});
+$("#cal-titulo").addEventListener("click", () => {
+  if (vistaCal === "semana") {
+    vistaCal = "mes";
+    semanaArriba = lunesDe(new Date(diaElegido.getFullYear(), diaElegido.getMonth(), 1));
+  } else {
+    vistaCal = "semana";
+    inicioSemana = lunesDe(diaElegido);
+  }
+  desplazado = 0;
+  dibujarSemana();
+  dibujarEventos();
+  cargarVista();
+});
+
+/** Trae los eventos del rango que se ve (el calendario descargado se reutiliza 5 min en Rust). */
+let cargaVista = 0;
+async function cargarVista() {
+  if (!conexiones.calendario) return;
+  const mia = ++cargaVista;
+  const [desde, hasta] = rangoVisto();
+  try {
+    const lista = await invoke<Evento[]>("eventos_calendario", { desde: fechaISO(desde), hasta: fechaISO(hasta) });
+    if (mia !== cargaVista) return;
+    eventosVista = lista;
+    errorCalendario = "";
+  } catch (error) {
+    errorCalendario = String(error);
+  }
+  dibujarSemana();
+  dibujarEventos();
 }
 
 function dibujarEventos() {
@@ -506,8 +764,13 @@ function dibujarEventos() {
     }),
   );
   const p = $("#sin-eventos");
-  p.hidden = delDia.length > 0;
-  if (!conexiones.calendario) vacio(p, "Conecta Google Calendar para ver tus reuniones aquí.", true);
+  // Si todos dicen «Busy», es la dirección pública del calendario (sin nombres).
+  const todos = eventosVista.length ? eventosVista : eventos;
+  const soloBusy = todos.length > 0 && todos.every((e) => esBusy(e.titulo));
+  p.hidden = (delDia.length > 0 && !soloBusy) || vistaCal !== "semana";
+  if (soloBusy) {
+    vacio(p, "Solo se ve «Busy» porque conectaste la dirección pública. Cámbiala por la «Dirección secreta en formato iCal».", true);
+  } else if (!conexiones.calendario) vacio(p, "Conecta Google Calendar para ver tus reuniones aquí.", true);
   else if (errorCalendario) vacio(p, errorCalendario);
   else vacio(p, mismoDia(diaElegido, ahora) ? "Nada en tu agenda hoy." : "Día libre.");
   dibujarResumen();
@@ -527,6 +790,7 @@ async function cargarCalendario() {
   }
   dibujarSemana();
   dibujarEventos();
+  cargarVista();
 }
 
 /** Avisa con un toast unos minutos antes de cada reunión. */
@@ -705,8 +969,12 @@ function elegirSegmento(s: Segmento) {
   if (s === "notion") sinLeer = 0;
   if (s === "calendario") {
     diaElegido = new Date();
+    inicioSemana = lunesDe(diaElegido);
+    vistaCal = "semana";
+    desplazado = 0;
     dibujarSemana();
     dibujarEventos();
+    cargarVista();
   }
   dibujarAvisos();
   actualizar();
@@ -1108,8 +1376,7 @@ function dibujarConexiones() {
     ...APPS.map((a) => {
       const tarjeta = el("div", "app");
       const cabeza = el("div", "cabeza");
-      const letra = el("span", a.letra.length > 1 ? "letra doble" : "letra", a.letra);
-      letra.style.background = a.color;
+      const letra = tileApp(a.id, a.color);
       cabeza.append(letra, el("span", "nombre", a.nombre));
       const boton = el("button");
       boton.type = "button";
@@ -1183,23 +1450,8 @@ function accionCarita(id: string) {
 
 // ══ Eventos de la interfaz ═════════════════════════════════════
 $("#capa-compacta").addEventListener("click", () => registrarToque(() => abrir()));
-// Iconitos pixel art propios de cada app (7×7; "#" = píxel encendido).
-const ICONOS_PIXEL: Record<string, string[]> = {
-  notion: ["#.....#", "##....#", "#.#...#", "#..#..#", "#...#.#", "#....##", "#.....#"], // una N
-  claude: [".#####.", "#######", "#.#.#.#", "#######", ".#####.", ".##....", ".#....."], // globito de chat
-  musica: ["...##..", "...#.#.", "...#..#", "...#...", ".###...", "####...", ".##...."], // nota musical
-  bandeja: [".#####.", "#.....#", "#.....#", "##...##", "#.###.#", "#.....#", "#######"], // bandeja
-};
-
-function svgPixel(filas: string[]) {
-  const cuadros = filas
-    .flatMap((fila, y) => [...fila].map((p, x) => (p === "#" ? `<rect x="${x}" y="${y}" width="1" height="1"/>` : "")))
-    .join("");
-  return `<svg viewBox="0 0 7 7" aria-hidden="true">${cuadros}</svg>`;
-}
-
 document.querySelectorAll<HTMLButtonElement>(".carita").forEach((c) => {
-  c.innerHTML = svgPixel(ICONOS_PIXEL[c.dataset.id!] ?? []);
+  c.innerHTML = ICONOS_APP[c.dataset.id!] ?? "";
   c.addEventListener("click", (e) => {
     e.stopPropagation(); // no cuenta como toque a Sylvie
     accionCarita(c.dataset.id!);
@@ -1252,6 +1504,43 @@ $<HTMLTextAreaElement>("#pedido").addEventListener("keydown", (e) => {
   }
 });
 $("#cancelar-pedido").addEventListener("click", () => invoke("cancelar_pedido"));
+
+// ══ En llamada (Zoom, Teams, Google Meet) ══════════════════════
+function fijarLlamada(nueva: Llamada) {
+  const cambia = !!nueva !== !!llamada;
+  llamada = nueva;
+  document.body.classList.toggle("en-llamada-activa", !!llamada);
+  document.querySelectorAll<HTMLElement>(".llamada-app").forEach((e) => (e.textContent = llamada?.app ?? ""));
+  document.querySelectorAll<HTMLElement>(".en-llamada .salir").forEach((e) => (e.hidden = !llamada?.puede_salir));
+  document.querySelectorAll<HTMLElement>(".en-llamada").forEach((e) => (e.title = llamada ? `Volver a ${llamada.app}` : ""));
+  dibujarTiempoLlamada();
+  if (cambia) {
+    zonaPendiente = true;
+    actualizar();
+  }
+}
+
+function dibujarTiempoLlamada() {
+  if (!llamada) return;
+  const seg = Math.max(0, Math.floor((Date.now() - llamada.desde) / 1000));
+  const h = Math.floor(seg / 3600);
+  const texto = h ? `${h}:${String(Math.floor((seg % 3600) / 60)).padStart(2, "0")}:${String(seg % 60).padStart(2, "0")}` : reloj(seg);
+  document.querySelectorAll<HTMLElement>(".llamada-tiempo").forEach((e) => (e.textContent = texto));
+}
+
+document.querySelectorAll<HTMLElement>(".en-llamada").forEach((b) => {
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const salir = (e.target as HTMLElement).closest("[data-llamada='salir']");
+    invoke(salir ? "llamada_salir" : "llamada_volver").catch((error) => {
+      $("#toast-titulo").textContent = "Llamada";
+      $("#toast-cuerpo").textContent = String(error);
+      $("#toast-accion").textContent = "";
+      mostrarToast("aviso", 3500);
+    });
+  });
+});
+listen<Llamada>("llamada", ({ payload }) => fijarLlamada(payload));
 
 // ══ AirDrop: barrita delgada en el notch mientras se envía ═════
 let estadoAirDrop: null | "enviando" | "enviado" = null;
@@ -1510,6 +1799,7 @@ async function revisarInactividad() {
 
 // ══ Arranque ═══════════════════════════════════════════════════
 async function iniciar() {
+  invoke<Llamada>("llamada_actual").then(fijarLlamada).catch(() => {});
   try {
     const a = await invoke<{ apariencia?: string; esquina?: string }>("leer_ajustes");
     fijarApariencia(a.apariencia ?? "notch", a.esquina ?? "abajo-der");
@@ -1530,6 +1820,7 @@ async function iniciar() {
 
   window.setInterval(() => {
     actualizarCara(); // expira "feliz" y "dj" a su tiempo
+    dibujarTiempoLlamada();
     actualizarCaritas();
     if (cancion?.reproduciendo && !moviendoBarra) {
       posicion = Math.min(cancion.duracion, posicion + 1);

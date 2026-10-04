@@ -86,12 +86,12 @@ body[data-modo="aturdida"] #notch {
 /* ── Compacta / asomada ───────────────────────────────────── */
 .capa.compacta { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; width: 100%; height: 100%; cursor: pointer; }
 body[data-modo="hover"] .capa.compacta { padding: 0 10px 0 12px; }
-/* Iconitos pixel art de cada app (7×7 píxeles, cada píxel = 2 px). Grises en reposo,
-   de su color cuando hay actividad. Los dibuja main.ts (ICONOS_PIXEL). */
+/* Iconitos de cada app (src/iconos.ts). Grises en reposo, de su color cuando hay actividad. */
 .caritas { display: grid; grid-template-columns: repeat(2, 14px); gap: 2px 3px; }
 .carita { display: block; width: 14px; height: 14px; padding: 0; margin: 0; border: 0; background: none; color: #4a4b55; cursor: pointer;
   transition: color 0.3s ease, transform 0.15s ease, filter 0.3s ease; }
-.carita svg { display: block; width: 14px; height: 14px; fill: currentColor; stroke: none; shape-rendering: crispEdges; }
+.carita svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.3; }
+.carita svg .relleno, .tile svg .relleno { fill: currentColor; }
 .carita[data-id="notion"] { --c: #e6e6ea; }
 .carita[data-id="claude"] { --c: #f0a07a; }
 .carita[data-id="musica"] { --c: #6fd6a0; }
@@ -229,7 +229,9 @@ body.comiendo #sin-bandeja, body.comiendo #lista-bandeja, body.comiendo #accione
 .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .lista .t-col { gap: 1px; }
 .lista .t-titulo { font-size: 13px; font-weight: 600; }
-.semana { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; padding: 2px; }
+.semana { overflow: hidden; padding: 2px 0; touch-action: pan-y; }
+.semana .pista { display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); width: 300%; will-change: transform; }
+.semana .pista .dia { margin: 0 1px; }
 .dia { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; border-radius: 8px; }
 .dia small { font-size: 9.5px; color: var(--tenue); }
 .dia b { font-size: 13px; }
@@ -420,3 +422,59 @@ body:not(.flotante) #flotante .barra-airdrop { display: none; }
 .segmentos button { padding: 0 9px; }
 #lista-reservas { max-height: 186px; }
 .evento .t-mini { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ══ Calendario: semana con flechas y vista de mes ══════════════ */
+.cal-cabeza { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
+.cal-cabeza button { border: 0; background: none; color: var(--suave); font: inherit; cursor: pointer; border-radius: 7px; }
+.cal-cabeza button:hover { background: #1b1c22; color: var(--texto); }
+.cal-flecha { width: 22px; height: 22px; font-size: 16px; line-height: 1; }
+.cal-titulo { flex-grow: 1; height: 22px; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.cal-titulo i { font-style: normal; font-size: 9px; color: var(--tenue); }
+.cal-hoy { height: 22px; padding: 0 8px; font-size: 11px; font-weight: 700; color: var(--acento) !important; }
+.puntos { position: absolute; bottom: 2px; left: 0; right: 0; display: flex; justify-content: center; gap: 2px; }
+.puntos i { width: 4px; height: 4px; border-radius: 50%; background: var(--acento); }
+.dia.elegido .puntos i, .celda.elegido .puntos i { background: var(--acento-texto); }
+.dia { padding-bottom: 7px; }
+
+.mes .nombres { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0 1px; }
+.mes .ventana { height: calc(19px * 5); overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%); }
+.mes .pista { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0 1px; will-change: transform; }
+.mes .nombre-dia { text-align: center; font-size: 9.5px; color: var(--tenue); padding-bottom: 1px; }
+.celda { position: relative; height: 19px; border: 0; border-radius: 7px; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0 0 4px; }
+.celda b { font-size: 11px; font-weight: 600; line-height: 15px; }
+.celda:hover { background: #1b1c22; }
+.celda.fuera { opacity: 0.35; }
+.celda.hoy b { color: var(--acento); font-weight: 800; }
+.celda.elegido { background: var(--acento); color: var(--acento-texto); }
+.celda.elegido b { color: var(--acento-texto); }
+.celda .puntos { bottom: 0; }
+.celda .puntos i { width: 3px; height: 3px; }
+
+/* Animación al cambiar de semana o mes */
+#semana, #mes { animation: aparece 0.25s ease both; }
+
+/* Tilecitos de las apps (Conexiones): fondo con degradé del color de la app + ícono oscuro */
+.tile { width: 28px; height: 28px; border-radius: 9px; flex: none; display: flex; align-items: center; justify-content: center; color: #101114;
+  background: var(--c);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--c) 100%, white 18%), color-mix(in srgb, var(--c) 82%, black 18%));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px color-mix(in srgb, var(--c) 30%, transparent); }
+.tile svg { width: 17px; height: 17px; stroke-width: 2.1; }
+
+/* ══ Indicador «en llamada» (Zoom, Teams, Google Meet) ══════════ */
+.en-llamada { display: none; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 7px; border: 0; border-radius: 999px;
+  background: rgba(255, 69, 58, 0.16); color: #ff8a80; font: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; cursor: pointer; }
+.en-llamada:hover { background: rgba(255, 69, 58, 0.26); }
+.en-llamada .punto-rojo { width: 7px; height: 7px; border-radius: 50%; background: #ff453a; box-shadow: 0 0 6px #ff453a; animation: late 1.6s ease-in-out infinite; }
+@keyframes late { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+body.en-llamada-activa .capa.compacta .en-llamada { display: inline-flex; }
+body.en-llamada-activa[data-modo="compacta"] .capa.compacta .caritas { display: none; }
+body.en-llamada-activa[data-modo="hover"] .capa.compacta .en-llamada { display: none; }
+/* En el panel: pastilla junto al engranaje */
+.barra-sup .en-llamada { height: 30px; padding: 0 6px 0 10px; }
+body.en-llamada-activa .barra-sup .en-llamada { display: inline-flex; }
+.en-llamada .salir { margin-left: 2px; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #ff453a; color: #fff; font-size: 12px; line-height: 1; }
+/* Mascota flotante: pastillita debajo de Sylvie */
+#flotante .en-llamada { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); background: #2a1210; border: 1px solid #5a2620; }
+body.en-llamada-activa #flotante .en-llamada { display: inline-flex; }
