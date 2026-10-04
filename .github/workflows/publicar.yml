@@ -54,19 +54,32 @@ jobs:
 
       - run: npm ci
 
+      # Las notas salen de docs/novedades/v<versión>.md (si no existe, se usan unas básicas).
+      - name: Notas de la versión
+        id: notas
+        shell: bash
+        run: |
+          v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          f="docs/novedades/v$v.md"
+          {
+            echo 'texto<<FIN_DE_NOTAS'
+            if [ -f "$f" ]; then cat "$f"; else
+              echo "## Descargas"
+              echo "- **Mac con chip Apple:** \`Sylvie_${v}_aarch64.dmg\`"
+              echo "- **Mac con Intel:** \`Sylvie_${v}_x64.dmg\`"
+              echo "- **Windows 10/11:** \`Sylvie_${v}_x64-setup.exe\`"
+            fi
+            echo
+            echo 'FIN_DE_NOTAS'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: "Sylvie v__VERSION__"
-          releaseBody: |
-            ## Descargas
-            - **Mac con chip Apple (M1, M2, M3…):** `Sylvie_*_aarch64.dmg`
-            - **Mac con Intel:** `Sylvie_*_x64.dmg`
-            - **Windows 10/11:** `Sylvie_*_x64-setup.exe`
-
-            Primera vez en Mac: clic derecho en Sylvie → **Abrir**. En Windows: **Más información → Ejecutar de todas formas**.
+          releaseBody: ${{ steps.notas.outputs.texto }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
